@@ -8,7 +8,6 @@ import (
 	"d3k-agent/internal/core/ports"
 )
 
-// JSONStorage는 간단한 로컬 파일 기반의 영속성 메커니즘을 제공합니다.
 type JSONStorage struct {
 	FilePath string
 	mu       sync.RWMutex
@@ -16,12 +15,13 @@ type JSONStorage struct {
 }
 
 type StorageData struct {
-	Cursors           map[string]string `json:"cursors"`
-	DailyPostCount    map[string]int    `json:"daily_post_count"`
-	LastPostDate      map[string]string `json:"last_post_date"`
-	LastPostTimestamp map[string]int64  `json:"last_post_timestamp"`
-	DailyCommentCount map[string]int    `json:"daily_comment_count"`
-	LastCommentDate   map[string]string `json:"last_comment_date"`
+	Cursors           map[string]string   `json:"cursors"`
+	DailyPostCount    map[string]int      `json:"daily_post_count"`
+	LastPostDate      map[string]string   `json:"last_post_date"`
+	LastPostTimestamp map[string]int64    `json:"last_post_timestamp"`
+	DailyCommentCount map[string]int      `json:"daily_comment_count"`
+	LastCommentDate   map[string]string   `json:"last_comment_date"`
+	ProactivePostIDs  map[string][]string `json:"proactive_post_ids"`
 }
 
 func NewJSONStorage(filePath string) (*JSONStorage, error) {
@@ -34,28 +34,23 @@ func NewJSONStorage(filePath string) (*JSONStorage, error) {
 			LastPostTimestamp: make(map[string]int64),
 			DailyCommentCount: make(map[string]int),
 			LastCommentDate:   make(map[string]string),
+			ProactivePostIDs:  make(map[string][]string),
 		},
 	}
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil { return nil, err }
-	
-	// 초기 로드
-	if err := s.loadFromFile(); err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
+	if err := s.loadFromFile(); err != nil && !os.IsNotExist(err) { return nil, err }
 	return s, nil
 }
 
 var _ ports.Storage = (*JSONStorage)(nil)
 
-// 내부 헬퍼 (락 없이 호출됨)
 func (s *JSONStorage) loadFromFile() error {
 	file, err := os.ReadFile(s.FilePath)
 	if err != nil { return err }
 	return json.Unmarshal(file, &s.Data)
 }
 
-// 내부 헬퍼 (락 없이 호출됨)
 func (s *JSONStorage) saveToFile() error {
 	data, err := json.MarshalIndent(s.Data, "", "  ")
 	if err != nil { return err }
@@ -72,8 +67,6 @@ func (s *JSONStorage) SaveCursor(source string, cursor string) error {
 func (s *JSONStorage) LoadCursor(source string) (string, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	// 실행 중인 메모리 데이터를 우선 반환하며, 
-	// 필요시 파일에서 다시 읽어오는 로직은 생략(성능 및 단순성)
 	return s.Data.Cursors[source], nil
 }
 
@@ -110,6 +103,27 @@ func (s *JSONStorage) IncrementCommentCount(source string, date string) error {
 		s.Data.LastCommentDate[source] = date
 	} else {
 		s.Data.DailyCommentCount[source]++
+	}
+	return s.saveToFile()
+}
+
+func (s *JSONStorage) IsProactiveDone(source, postID string) (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	ids := s.Data.ProactivePostIDs[source]
+	for _, id := range ids {
+		if id == postID { return true, nil }
+	}
+	return false, nil
+}
+
+func (s *JSONStorage) MarkProactive(source, postID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Data.ProactivePostIDs[source] = append(s.Data.ProactivePostIDs[source], postID)
+	// 최근 100개만 유지
+	if len(s.Data.ProactivePostIDs[source]) > 100 {
+		s.Data.ProactivePostIDs[source] = s.Data.ProactivePostIDs[source][1:]
 	}
 	return s.saveToFile()
 }
