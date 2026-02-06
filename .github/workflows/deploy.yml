@@ -7,7 +7,7 @@ on:
 jobs:
   deploy:
     name: Build and Run
-    runs-on: self-hosted  # 집 노트북에 설치된 러너에서 실행
+    runs-on: self-hosted
 
     steps:
       - name: Check out code
@@ -16,16 +16,27 @@ jobs:
       - name: Stop existing process
         shell: powershell
         run: |
-          # d3k-agent.exe가 실행 중이면 종료, 없으면 그냥 지나감
-          Stop-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
-          Start-Sleep -Seconds 2
+          $proc = Get-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
+          if ($proc) {
+              Write-Host "🛑 Stopping existing d3k-agent process..."
+              Stop-Process -Name "d3k-agent" -Force
+              Start-Sleep -Seconds 3
+          }
 
       - name: Build Go binary
-        run: go build -o d3k-agent.exe ./cmd/d3k-agent
+        shell: powershell
+        run: |
+          Write-Host "🔨 Building Go binary..."
+          go build -o d3k-agent.exe ./cmd/d3k-agent
+          if (!(Test-Path "./d3k-agent.exe")) {
+              throw "Build failed: d3k-agent.exe not created"
+          }
 
       - name: Run D3K Agent
         shell: powershell
         run: |
-          # 백그라운드에서 실행되도록 시작 (Start-Process)
-          # 로그는 bot_output.log에 저장
-          Start-Process -FilePath "./d3k-agent.exe" -NoNewWindow -RedirectStandardOutput "./bot_output.log"
+          Write-Host "🚀 Starting D3K Agent in background..."
+          # Start-Process with explicit working directory
+          $workDir = Get-Location
+          Start-Process -FilePath "./d3k-agent.exe" -WorkingDirectory $workDir -NoNewWindow -RedirectStandardOutput "./bot_output.log" -RedirectStandardError "./bot_error.log"
+          Write-Host "✅ Deployment complete. Log saved to bot_output.log"
