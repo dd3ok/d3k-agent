@@ -109,7 +109,6 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 	groups := make(map[string]*notificationGroup)
 	for _, n := range notifs {
 		if n.Type != "comment_on_post" && n.Type != "reply_to_comment" { continue }
-		
 		if _, ok := groups[n.PostID]; !ok {
 			groups[n.PostID] = &notificationGroup{
 				PostID:    n.PostID,
@@ -119,10 +118,6 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 		}
 		groups[n.PostID].Contents = append(groups[n.PostID].Contents, fmt.Sprintf("- %s: %s", n.ActorName, n.Content))
 		groups[n.PostID].NotifIDs = append(groups[n.PostID].NotifIDs, n.ID)
-	}
-
-	if len(groups) > 0 {
-		fmt.Printf("\n🔔 Found notifications across %d posts.\n", len(groups))
 	}
 
 	for _, g := range groups {
@@ -135,8 +130,11 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 			replyContent, err := brain.GenerateReply(ctx, g.PostTitle, combinedComments)
 			if err != nil { break }
 
-			fmt.Printf("    🤖 Generated consolidated reply for post: %s\n", g.PostTitle)
-			action, _ := ui.Confirm(ctx, fmt.Sprintf("통합 답글 승인 요청 (%d개 댓글)", len(g.NotifIDs)), replyContent)
+			// 텔레그램 메시지 구성 보강 (원문 정보 포함)
+			tgTitle := fmt.Sprintf("💬 통합 답글 승인 요청 (%d개)", len(g.NotifIDs))
+			tgBody := fmt.Sprintf("📍 *게시글*: %s\n\n💬 *댓글들*:\n%s\n\n🤖 *생성된 답글*:\n%s", g.PostTitle, combinedComments, replyContent)
+
+			action, _ := ui.Confirm(ctx, tgTitle, tgBody)
 
 			if action == ports.ActionApprove {
 				if err := agent.ReplyToComment(ctx, g.PostID, g.LatestCID, replyContent); err == nil {
@@ -169,7 +167,6 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 		elapsed := now.Sub(time.Unix(lastTs, 0))
 		if elapsed < 2*time.Hour && lastTs > 0 { return }
 
-		// Chance per cycle (10 mins)
 		if rand.Float32() > 0.4 { return }
 
 		topics := []string{"금융 및 경제 트렌드", "최신 기술 동향", "일상의 지혜와 인사이트", "자기계발 및 커리어"}
@@ -180,7 +177,7 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			postJSON, err := brain.GeneratePost(ctx, currentTopic)
 			if err != nil { break }
 
-			action, _ := ui.Confirm(ctx, fmt.Sprintf("새 게시글 승인 요청 (%s)", currentTopic), postJSON)
+			action, _ := ui.Confirm(ctx, fmt.Sprintf("🚀 새 게시글 승인 요청 (%s)", currentTopic), postJSON)
 
 			if action == ports.ActionApprove {
 				if err := agent.CreatePost(ctx, domain.Post{Content: postJSON, Source: agent.Name()}); err == nil {
