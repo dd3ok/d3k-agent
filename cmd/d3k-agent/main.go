@@ -21,7 +21,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.4]")
+	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.5]")
 
 	ctx := context.Background()
 	store, _ := storage.NewJSONStorage("data/storage.json")
@@ -55,7 +55,7 @@ func processAgent(ctx context.Context, agent ports.Site, brain ports.Brain, ui p
 func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brain, ui ports.Interaction, store ports.Storage) {
 	today := time.Now().Format("2006-01-02")
 	count, _, _ := store.GetCommentStats(agent.Name())
-	if count >= 12 { return }
+	if count >= 20 { return }
 
 	notifs, _ := agent.GetNotifications(ctx, true)
 	if len(notifs) == 0 { fmt.Print("0 notifs. "); return }
@@ -71,13 +71,18 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 
 	for pid, g := range groups {
 		if brain == nil || ui == nil { continue }
+		if count >= 20 { break }
 		reply, _ := brain.GenerateReply(ctx, g.title, strings.Join(g.contents, "\n"))
 		
-		action, _ := ui.Confirm(ctx, "💬 답글 승인 요청: "+g.title, fmt.Sprintf("🤖 답글:\n%s", reply))
+		tgTitle := fmt.Sprintf("💬 통합 답글 승인 요청 (%d개)", len(g.notifIDs))
+		tgBody := fmt.Sprintf("📍 *게시글*: %s\n\n🤖 *답글*:\n%s", g.title, reply)
+		
+		action, _ := ui.Confirm(ctx, tgTitle, tgBody)
 		if action == ports.ActionApprove {
 			if err := agent.ReplyToComment(ctx, pid, g.latestCID, reply); err == nil {
 				for _, nid := range g.notifIDs { agent.MarkNotificationRead(ctx, nid) }
 				store.IncrementCommentCount(agent.Name(), today)
+				count++
 			}
 		}
 	}
@@ -86,26 +91,26 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain ports.Brain, ui ports.Interaction, store ports.Storage) {
 	today := time.Now().Format("2006-01-02")
 	count, _, _ := store.GetCommentStats(agent.Name())
-	if count >= 12 || brain == nil || ui == nil { return }
+	if count >= 20 || brain == nil || ui == nil { return }
 
 	posts, _ := agent.GetRecentPosts(ctx, 5)
 	for _, p := range posts {
 		if done, _ := store.IsProactiveDone(agent.Name(), p.ID); done { continue }
+		if count >= 20 { break }
 		
 		score, reason, _ := brain.EvaluatePost(ctx, p)
 		if score >= 7 {
-			fmt.Printf("\n✨ Interesting post found (Score %d): %s\n", score, p.Title)
-			reply, _ := brain.GenerateReply(ctx, p.Title, p.Content) // Using GenerateReply for now
-			
+			reply, _ := brain.GenerateReply(ctx, p.Title, p.Content)
 			action, _ := ui.Confirm(ctx, fmt.Sprintf("🌟 선제적 댓글 승인 (점수:%d)", score), fmt.Sprintf("📍 제목: %s\n📝 이유: %s\n\n🤖 댓글:\n%s", p.Title, reason, reply))
 			if action == ports.ActionApprove {
 				if err := agent.CreateComment(ctx, p.ID, reply); err == nil {
 					store.MarkProactive(agent.Name(), p.ID)
 					store.IncrementCommentCount(agent.Name(), today)
+					count++
 					break // 한 사이클에 하나만
 				}
 			} else {
-				store.MarkProactive(agent.Name(), p.ID) // 거절해도 다시 묻지 않음
+				store.MarkProactive(agent.Name(), p.ID)
 			}
 		}
 	}
