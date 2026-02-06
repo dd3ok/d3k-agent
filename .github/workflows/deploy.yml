@@ -34,21 +34,26 @@ jobs:
           $projectRoot = $mainFile.Directory.Parent.Parent.FullName
           cd $projectRoot
 
-          Write-Host "🛑 Killing existing agent processes and windows..."
-          # 1. d3k-agent.exe 프로세스 강제 종료
-          taskkill /F /IM d3k-agent.exe /T 2>$null
+          Write-Host "🛑 Killing existing agent windows and processes..."
           
-          # 2. 특정 타이틀을 가진 PowerShell 창 종료 (나중에 실행할 때 타이틀을 부여할 예정)
+          # 1. 특정 타이틀을 가진 모든 PowerShell 창 종료 (가장 확실함)
+          # 'D3K-AGENT-WINDOW'라는 이름이 들어간 창을 찾아 강제 종료합니다.
           Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*D3K-AGENT-WINDOW*" } | Stop-Process -Force -ErrorAction SilentlyContinue
           
-          Start-Sleep -Seconds 2
+          # 2. 잔여 실행 파일 프로세스 종료
+          taskkill /F /IM d3k-agent.exe /T 2>$null
+          
+          Start-Sleep -Seconds 3
 
           # 3. 파일 교체
-          Move-Item -Path "./d3k-agent-new.exe" -Destination "./d3k-agent.exe" -Force
+          if (Test-Path "./d3k-agent-new.exe") {
+              Move-Item -Path "./d3k-agent-new.exe" -Destination "./d3k-agent.exe" -Force
+          }
 
           # 4. 새 창에서 고유 타이틀과 함께 실행
-          Write-Host "🚀 Launching version [v1.0.3] in a new window..."
+          Write-Host "🚀 Launching new agent in a visible window..."
+          # $Host.UI.RawUI.WindowTitle를 통해 창 상단 이름을 고정합니다.
           $cmd = "`$Host.UI.RawUI.WindowTitle = 'D3K-AGENT-WINDOW'; ./d3k-agent.exe"
           Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmd -WorkingDirectory $projectRoot
           
-          Write-Host "✨ Deployment Successful. Old windows cleaned up."
+          Write-Host "✨ Deployment Successful. Old window closed and new one opened."
