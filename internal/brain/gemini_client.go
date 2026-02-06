@@ -4,6 +4,7 @@ import (
 	"context"
 	"d3k-agent/internal/core/domain"
 	"d3k-agent/internal/core/ports"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
