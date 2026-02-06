@@ -7,6 +7,8 @@ d3k-agent
 
 # Data & Secrets (중요: API 키가 저장되는 곳)
 data/
+.env
+start.sh
 *.db
 *.sqlite
 .env

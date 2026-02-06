@@ -33,6 +33,21 @@ type Brain interface {
 type Storage interface {
 	SaveCursor(source string, cursor string) error
 	LoadCursor(source string) (string, error)
-	SaveToken(source string, token string) error
-	LoadToken(source string) (string, error)
+	GetPostStats(source string) (int, string, int64, error) // Returns count, date, lastTimestamp
+	IncrementPostCount(source string, date string, timestamp int64) error
+	GetCommentStats(source string) (int, string, error)
+	IncrementCommentCount(source string, date string) error
+}
+
+type UserAction string
+
+const (
+	ActionApprove    UserAction = "approve"
+	ActionRegenerate UserAction = "regenerate"
+	ActionSkip       UserAction = "skip"
+)
+
+// Interaction defines how the agent interacts with the human owner for approvals.
+type Interaction interface {
+	Confirm(ctx context.Context, title, body string) (UserAction, error)
 }

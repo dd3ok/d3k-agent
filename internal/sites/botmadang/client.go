@@ -8,6 +8,7 @@ import (
 	"d3k-agent/internal/core/ports"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -40,72 +41,73 @@ func (c *Client) Name() string {
 }
 
 func (c *Client) Initialize(ctx context.Context) error {
-	// 1. Try to load API key from storage
-	token, _ := c.Storage.LoadToken(c.Name())
-	if token != "" {
-		c.APIKey = token
-		// Verify token validity
+	// 1. 오직 환경 변수(.env)에서만 API 키를 로드합니다.
+	envToken := os.Getenv("BOTMADANG_API_KEY")
+	if envToken != "" {
+		c.APIKey = envToken
 		if err := c.checkToken(ctx); err == nil {
-			fmt.Printf("✅ [%s] Authenticated successfully.\n", c.Name())
+			fmt.Printf("✅ [%s] .env 파일을 통해 인증되었습니다.\n", c.Name())
 			return nil
 		}
-		fmt.Printf("⚠️  [%s] Saved token is invalid or expired.\n", c.Name())
+		return fmt.Errorf("[%s] .env에 설정된 API 키가 유효하지 않거나 만료되었습니다", c.Name())
 	}
 
-	// 2. Start Interactive Registration Flow
-	fmt.Printf("\n🚀 [%s] Starting New Agent Registration\n", c.Name())
+	// 2. 키가 없을 경우 등록 절차를 시작합니다.
+	fmt.Printf("\n🚀 [%s] .env에서 API 키를 찾을 수 없습니다. 신규 등록을 시작합니다.\n", c.Name())
 	reader := bufio.NewReader(os.Stdin)
 
-	// Ask for Name
-	fmt.Print("Enter Bot Name (default: D3K_Bot): ")
+	fmt.Print("봇 이름을 입력하세요 (기본값: D3K_Bot): ")
 	botName, _ := reader.ReadString('\n')
 	botName = strings.TrimSpace(botName)
 	if botName == "" {
 		botName = "D3K_Bot"
 	}
 
-	// Register
-	regResp, err := c.Register(botName, "An automated agent for Botmadang")
+	// 등록 요청
+	regResp, err := c.Register(botName, "기술/금융/일상에 관한 이야기를 해보고 싶어요. 우리의 대화가 생각의 확장, 영감을 얻는데 도움이 되면 좋겠습니다.")
 	if err != nil {
-		return fmt.Errorf("registration failed: %w", err)
+		return fmt.Errorf("등록 실패: %w", err)
 	}
 
-	// Show Instructions
-	fmt.Printf("\n=== 🛡️  Verification Required ===\n")
-	fmt.Printf("1. Open this URL: %s\n", regResp.Agent.ClaimURL)
-	fmt.Printf("2. Post a tweet containing this code: %s\n", regResp.Agent.VerificationCode)
-	fmt.Printf("3. Copy the link to your tweet.\n")
+	// 인증 안내
+	fmt.Printf("\n=== 🛡️  인증 필요 ===\n")
+	fmt.Printf("1. 다음 URL 접속: %s\n", regResp.Agent.ClaimURL)
+	fmt.Printf("2. 다음 코드를 포함하여 트윗 작성: %s\n", regResp.Agent.VerificationCode)
+	fmt.Printf("3. 작성한 트윗의 링크(URL)를 복사하세요.\n")
 	fmt.Println("=================================")
 
-	// Ask for Tweet URL
-	fmt.Print("\n🔗 Enter Tweet URL: ")
+	fmt.Print("\n🔗 트윗 URL 입력: ")
 	tweetURL, _ := reader.ReadString('\n')
 	tweetURL = strings.TrimSpace(tweetURL)
 
 	if tweetURL == "" {
-		return fmt.Errorf("tweet URL is required")
+		return fmt.Errorf("트윗 URL이 필요합니다")
 	}
 
-	// Verify
-	fmt.Print("Verifying... ")
+	// 인증 확인
+	fmt.Print("인증 확인 중... ")
 	apiKey, err := c.Verify(regResp.Agent.VerificationCode, tweetURL)
 	if err != nil {
-		fmt.Println("FAILED")
-		return fmt.Errorf("verification failed: %w", err)
+		fmt.Println("실패")
+		return fmt.Errorf("인증 실패: %w", err)
 	}
-	fmt.Println("SUCCESS!")
+	fmt.Println("성공!")
 
-	// Save
-	c.APIKey = apiKey
-	if err := c.Storage.SaveToken(c.Name(), apiKey); err != nil {
-		return fmt.Errorf("failed to save token: %w", err)
-	}
+	// 사용자 안내 및 종료
+	fmt.Printf("\n🔑 발급된 API 키: %s\n", apiKey)
+	fmt.Println("=========================================================")
+	fmt.Println("⚠️  다음 작업을 수행하세요:")
+	fmt.Println("1. 위 API 키를 복사합니다.")
+	fmt.Println("2. '.env' 파일을 엽니다.")
+	fmt.Println("3. BOTMADANG_API_KEY=값 형태로 붙여넣습니다.")
+	fmt.Println("4. 에이전트를 다시 실행하세요.")
+	fmt.Println("=========================================================")
 
-	fmt.Printf("✅ [%s] Registration complete! API Key saved.\n", c.Name())
+	os.Exit(0) // 사용자 설정을 유도하기 위해 종료
 	return nil
 }
 
-// checkToken verifies if the current API Key is valid
+// checkToken은 현재 API 키의 유효성을 검사합니다.
 func (c *Client) checkToken(ctx context.Context) error {
 	req, _ := http.NewRequestWithContext(ctx, "GET", c.BaseURL+"/agents/me", nil)
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -117,7 +119,7 @@ func (c *Client) checkToken(ctx context.Context) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("invalid token, status: %d", resp.StatusCode)
+		return fmt.Errorf("유효하지 않은 토큰, 상태 코드: %d", resp.StatusCode)
 	}
 	return nil
 }
@@ -132,7 +134,8 @@ func (c *Client) Register(name, description string) (*RegisterResponse, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("register failed with status: %d", resp.StatusCode)
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("등록 실패 (%d): %s", resp.StatusCode, string(bodyBytes))
 	}
 
 	var res RegisterResponse
@@ -142,7 +145,7 @@ func (c *Client) Register(name, description string) (*RegisterResponse, error) {
 	return &res, nil
 }
 
-// Verify completes the registration process
+// Verify 인증 과정을 완료합니다.
 func (c *Client) Verify(code, tweetURL string) (string, error) {
 	reqBody, _ := json.Marshal(VerifyRequest{TweetURL: tweetURL})
 	url := fmt.Sprintf("%s/claim/%s/verify", c.BaseURL, code)
@@ -156,7 +159,7 @@ func (c *Client) Verify(code, tweetURL string) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		var errRes struct{ Message string `json:"message"` }
 		json.NewDecoder(resp.Body).Decode(&errRes)
-		return "", fmt.Errorf("verify failed (%d): %s", resp.StatusCode, errRes.Message)
+		return "", fmt.Errorf("인증 실패 (%d): %s", resp.StatusCode, errRes.Message)
 	}
 
 	var res VerifyResponse
@@ -173,9 +176,7 @@ func (c *Client) Verify(code, tweetURL string) (string, error) {
 
 // GetRecentPosts implements ports.Site
 func (c *Client) GetRecentPosts(ctx context.Context, limit int) ([]domain.Post, error) {
-	// Use limit and context
 	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("%s/posts?limit=%d", c.BaseURL, limit), nil)
-	// API Key is optional for reading posts, but good to include if we have it
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
@@ -227,7 +228,7 @@ func (c *Client) GetNotifications(ctx context.Context, unreadOnly bool) ([]domai
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch notifications: status %d", resp.StatusCode)
+		return nil, fmt.Errorf("알림 가져오기 실패: 상태 코드 %d", resp.StatusCode)
 	}
 
 	var data struct {
@@ -241,7 +242,7 @@ func (c *Client) GetNotifications(ctx context.Context, unreadOnly bool) ([]domai
 			CommentID      string `json:"comment_id"`
 			ContentPreview string `json:"content_preview"`
 			IsRead         bool   `json:"is_read"`
-			CreatedAt      string `json:"created_at"` // Handle string time
+			CreatedAt      string `json:"created_at"`
 		} `json:"notifications"`
 	}
 
@@ -261,7 +262,6 @@ func (c *Client) GetNotifications(ctx context.Context, unreadOnly bool) ([]domai
 			CommentID: n.CommentID,
 			Content:   n.ContentPreview,
 			IsRead:    n.IsRead,
-			// Time parsing omitted for brevity, acceptable for now
 		})
 	}
 
@@ -269,12 +269,69 @@ func (c *Client) GetNotifications(ctx context.Context, unreadOnly bool) ([]domai
 }
 
 func (c *Client) CreatePost(ctx context.Context, post domain.Post) error {
-	// TODO: Implement API call with Rate Limiting logic
+	type postPayload struct {
+		Title     string `json:"title"`
+		Content   string `json:"content"`
+		Submadang string `json:"submadang"`
+	}
+
+	var payload postPayload
+	if err := json.Unmarshal([]byte(post.Content), &payload); err != nil {
+		payload.Title = post.Title
+		payload.Content = post.Content
+	}
+	
+	if payload.Submadang == "" {
+		payload.Submadang = "general"
+	}
+
+	reqBody, _ := json.Marshal(payload)
+	url := fmt.Sprintf("%s/posts", c.BaseURL)
+	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		var errRes struct{ Message string `json:"message"` }
+		json.NewDecoder(resp.Body).Decode(&errRes)
+		return fmt.Errorf("게시글 작성 실패 (%d): %s", resp.StatusCode, errRes.Message)
+	}
+
 	return nil
 }
 
 func (c *Client) CreateComment(ctx context.Context, postID string, content string) error {
-	// TODO: Implement API call with Rate Limiting logic
+	reqBody, _ := json.Marshal(map[string]string{
+		"content": content,
+	})
+
+	url := fmt.Sprintf("%s/posts/%s/comments", c.BaseURL, postID)
+	req, _ := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+
+	resp, err := c.HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		var errRes struct{ Message string `json:"message"` }
+		json.NewDecoder(resp.Body).Decode(&errRes)
+		return fmt.Errorf("댓글 작성 실패 (%d): %s", resp.StatusCode, errRes.Message)
+	}
+
 	return nil
 }
 
@@ -300,7 +357,7 @@ func (c *Client) ReplyToComment(ctx context.Context, postID, parentCommentID, co
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		var errRes struct{ Message string `json:"message"` }
 		json.NewDecoder(resp.Body).Decode(&errRes)
-		return fmt.Errorf("reply failed (%d): %s", resp.StatusCode, errRes.Message)
+		return fmt.Errorf("답글 작성 실패 (%d): %s", resp.StatusCode, errRes.Message)
 	}
 
 	return nil
@@ -325,7 +382,7 @@ func (c *Client) MarkNotificationRead(ctx context.Context, id string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("mark read failed: status %d", resp.StatusCode)
+		return fmt.Errorf("읽음 처리 실패: 상태 코드 %d", resp.StatusCode)
 	}
 
 	return nil
