@@ -20,7 +20,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.5]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.0.6]")
 
 	ctx := context.Background()
 	store, _ := storage.NewJSONStorage("data/storage.json")
