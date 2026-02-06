@@ -13,7 +13,7 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
         with:
-          clean: false  # 중요: .env 같은 로컬 파일을 지우지 않도록 설정
+          clean: false
 
       - name: Deploy Process
         shell: powershell
@@ -23,42 +23,22 @@ jobs:
           if (!$mainFile) { throw "Fatal: main.go not found!" }
           $projectRoot = $mainFile.Directory.Parent.Parent.FullName
           cd $projectRoot
-          Write-Host "🏠 Project Root: $projectRoot"
 
           # 2. 기존 프로세스 종료
           $proc = Get-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
           if ($proc) {
-              Write-Host "🛑 Stopping existing d3k-agent process..."
+              Write-Host "🛑 Stopping existing agent..."
               Stop-Process -Name "d3k-agent" -Force
-              Start-Sleep -Seconds 3
+              Start-Sleep -Seconds 2
           }
 
-          # 3. .env 파일 체크
-          if (!(Test-Path "./.env")) {
-              Write-Host "❌ FATAL: .env file is missing! Please put it in: $projectRoot"
-              throw ".env file missing"
-          }
-
-          # 4. 빌드 Go binary
-          Write-Host "🔨 Building Go binary..."
+          # 3. 빌드
+          Write-Host "🔨 Building..."
           go build -o d3k-agent.exe ./cmd/d3k-agent
-          if (!(Test-Path "./d3k-agent.exe")) {
-              throw "Build failed: d3k-agent.exe not created"
-          }
 
-          # 5. 실행
-          Write-Host "🚀 Starting D3K Agent in background..."
-          $workDir = Get-Location
-          # 로그 파일 초기화
-          New-Item -ItemType File -Path "./bot_output.log" -Force | Out-Null
+          # 4. 새 창에서 실행 (Interactive Window)
+          # 'powershell.exe'를 사용하여 새로운 창을 띄우고 그 안에서 봇을 실행합니다.
+          Write-Host "🚀 Launching Agent in a NEW Terminal Window..."
+          Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", "& './d3k-agent.exe'" -WorkingDirectory $projectRoot
           
-          Start-Process -FilePath "./d3k-agent.exe" -WorkingDirectory $workDir -NoNewWindow -RedirectStandardOutput "./bot_output.log" -RedirectStandardError "./bot_error.log"
-          
-          Start-Sleep -Seconds 5 # 봇이 켜질 때까지 잠시 대기
-          
-          Write-Host "📊 Checking Startup Logs:"
-          if (Test-Path "./bot_output.log") {
-              Get-Content "./bot_output.log" -Head 10
-          }
-          
-          Write-Host "✅ Deployment complete. Agent is running."
+          Write-Host "✅ Done! A new terminal window should have opened on your laptop."
