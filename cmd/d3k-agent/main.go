@@ -24,7 +24,7 @@ func main() {
 		fmt.Println("ℹ️  Note: .env file not found, using system environment variables.")
 	}
 
-	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.1]")
+	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.2]")
 
 	ctx := context.Background()
 
@@ -39,7 +39,11 @@ func main() {
 		myBrain, err = brain.NewGeminiBrain(ctx, brainKey)
 		if err == nil {
 			fmt.Println("🧠 Brain connected (Gemini)")
+		} else {
+			fmt.Printf("❌ Brain connection failed: %v\n", err)
 		}
+	} else {
+		fmt.Println("❌ GEMINI_API_KEY missing in .env")
 	}
 
 	var ui ports.Interaction
@@ -47,9 +51,17 @@ func main() {
 	tgChatID := os.Getenv("TELEGRAM_CHAT_ID")
 	if tgToken != "" && tgChatID != "" {
 		ui, err = telegram.NewTelegramUI(tgToken, tgChatID)
-		if err == nil {
-			fmt.Println("📲 Telegram Bot connected")
+		if err != nil {
+			log.Printf("⚠️  Telegram initialization failed: %v", err)
+		} else {
+			fmt.Println("📲 Telegram Bot connected and ready")
 		}
+	} else {
+		fmt.Println("❌ Telegram credentials missing in .env")
+	}
+
+	if os.Getenv("BOTMADANG_API_KEY") == "" {
+		fmt.Println("❌ BOTMADANG_API_KEY missing in .env. Registration will be required.")
 	}
 
 	agents := []ports.Site{
@@ -60,6 +72,8 @@ func main() {
 			log.Fatalf("❌ Critical Error: Failed to initialize %s: %v", agent.Name(), err)
 		}
 	}
+
+	fmt.Println("🚀 All systems ready. Entering main loop...")
 
 	// Main loop
 	for {
@@ -82,7 +96,7 @@ func processAgent(ctx context.Context, agent ports.Site, brain ports.Brain, ui p
 	handleDailyPosting(ctx, agent, brain, ui, store)
 	
 	posts, _ := agent.GetRecentPosts(ctx, 3)
-	if len(posts) > 0 { fmt.Print("Posts OK. ") }
+	if len(posts) > 0 { fmt.Print("Recent posts verified. ") }
 }
 
 type notificationGroup struct {
@@ -99,12 +113,20 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 	if lastDate != today { count = 0 }
 	
 	if count >= 12 {
-		fmt.Print("Comment quota reached (12/12). ")
+		fmt.Printf("Comment quota reached (%d/12). ", count)
 		return
 	}
 
 	notifs, err := agent.GetNotifications(ctx, true)
-	if err != nil || len(notifs) == 0 { return }
+	if err != nil {
+		fmt.Printf("Error: %v ", err)
+		return
+	}
+	
+	if len(notifs) == 0 {
+		fmt.Print("No new notifications. ")
+		return
+	}
 
 	groups := make(map[string]*notificationGroup)
 	for _, n := range notifs {
@@ -120,21 +142,38 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 		groups[n.PostID].NotifIDs = append(groups[n.PostID].NotifIDs, n.ID)
 	}
 
+	if len(groups) > 0 {
+		fmt.Printf("\n🔔 Found notifications across %d posts.\n", len(groups))
+	} else {
+		fmt.Print("No actionable notifications. ")
+		return
+	}
+
 	for _, g := range groups {
-		if brain == nil || ui == nil { continue }
+		if brain == nil || ui == nil {
+			fmt.Println("    ⚠️ Brain or UI not ready, skipping.")
+			continue
+		}
 		if count >= 12 { break }
 
 		combinedComments := strings.Join(g.Contents, "\n")
 		
 		for {
 			replyContent, err := brain.GenerateReply(ctx, g.PostTitle, combinedComments)
-			if err != nil { break }
+			if err != nil { 
+				fmt.Printf("    ❌ Brain failed: %v\n", err)
+				break 
+			}
 
-			// 텔레그램 메시지 구성 보강 (원문 정보 포함)
 			tgTitle := fmt.Sprintf("💬 통합 답글 승인 요청 (%d개)", len(g.NotifIDs))
 			tgBody := fmt.Sprintf("📍 *게시글*: %s\n\n💬 *댓글들*:\n%s\n\n🤖 *생성된 답글*:\n%s", g.PostTitle, combinedComments, replyContent)
 
-			action, _ := ui.Confirm(ctx, tgTitle, tgBody)
+			fmt.Printf("    🤖 Generated reply for '%s', waiting for Telegram approval...\n", g.PostTitle)
+			action, err := ui.Confirm(ctx, tgTitle, tgBody)
+			if err != nil {
+				fmt.Printf("    ❌ Telegram interaction failed: %v\n", err)
+				break
+			}
 
 			if action == ports.ActionApprove {
 				if err := agent.ReplyToComment(ctx, g.PostID, g.LatestCID, replyContent); err == nil {
@@ -144,11 +183,15 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 					}
 					store.IncrementCommentCount(agent.Name(), today)
 					count++
+				} else {
+					fmt.Printf("    ❌ Reply failed: %v\n", err)
 				}
 				break
 			} else if action == ports.ActionRegenerate {
+				fmt.Println("    🔄 Regenerating...")
 				continue
 			} else {
+				fmt.Println("    ⏩ Skipped.")
 				break
 			}
 		}
@@ -174,15 +217,26 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 
 		for {
 			currentTopic := topics[attempt % len(topics)]
+			fmt.Printf("\n📝 [Posting] Generating post about: %s\n", currentTopic)
 			postJSON, err := brain.GeneratePost(ctx, currentTopic)
-			if err != nil { break }
+			if err != nil { 
+				fmt.Printf("    ❌ Brain failed: %v\n", err)
+				break 
+			}
 
-			action, _ := ui.Confirm(ctx, fmt.Sprintf("🚀 새 게시글 승인 요청 (%s)", currentTopic), postJSON)
+			fmt.Println("    🚀 Waiting for Telegram approval...")
+			action, err := ui.Confirm(ctx, fmt.Sprintf("🚀 새 게시글 승인 요청 (%s)", currentTopic), postJSON)
+			if err != nil {
+				fmt.Printf("    ❌ Telegram interaction failed: %v\n", err)
+				break
+			}
 
 			if action == ports.ActionApprove {
 				if err := agent.CreatePost(ctx, domain.Post{Content: postJSON, Source: agent.Name()}); err == nil {
 					fmt.Println("    ✅ Post published!")
 					store.IncrementPostCount(agent.Name(), today, now.Unix())
+				} else {
+					fmt.Printf("    ❌ Post failed: %v\n", err)
 				}
 				break
 			} else if action == ports.ActionRegenerate {
