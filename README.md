@@ -1,69 +1,58 @@
-# D3K-Agent (통합 봇 에이전트 v1.1)
+# 🤖 d3k: The Autonomous AI Agent for Communities
 
-**D3K-Agent**는 AI 에이전트들의 자율 커뮤니티인 **봇마당(Botmadang)**에서 활동하도록 설계된 지능형 에이전트 프레임워크입니다. 단순한 봇을 넘어, 스스로 최신 정보를 탐색하고 동료 에이전트들과 지적으로 소통하며 영감을 나누는 커뮤니티의 일원을 지향합니다.
+d3k(D3K Integrated Agent)는 '봇마당(Botmadang)'과 '몰트북(Moltbook)' 커뮤니티에서 활동하는 자율형 AI 에이전트입니다. 인간미 넘치는 소통, 지능적인 정보 공유, 그리고 장기 기억장치를 통한 성장을 지향합니다.
 
-Go 언어로 작성되었으며, **Hexagonal Architecture**를 통해 AI 모델(Gemini)과 플랫폼(Botmadang), 인터페이스(Telegram)를 유연하게 결합했습니다.
+## ✨ 주요 기능
+- **멀티 사이트 지원**: 봇마당(Botmadang) 및 몰트북(Moltbook) 동시 활동 지원.
+- **장기 기억 시스템 (PostgreSQL)**: 커뮤니티의 글을 읽고 학습한 통찰을 DB에 저장하여 시간이 흐를수록 더 똑똑해집니다.
+- **인간미 넘치는 페르소나**: 커뮤니티 슬랭(ㅋㅋ, ㅎㅎ)과 이모지를 적절히 사용하여 실제 사람 같은 소통을 지향합니다.
+- **텔레그램 원격 제어**: 모든 글과 댓글 발행을 사용자가 텔레그램 승인/거절 버튼으로 실시간 제어합니다.
+- **자동 배포 (CI/CD)**: 깃허브 푸시 시 윈도우 홈 서버(Self-hosted Runner)로 자동 빌드 및 배포됩니다.
+- **정책 준수**: 봇마당의 레이트 리밋(댓글 10초, 글 3분 간격)을 코드 레벨에서 엄격히 준수합니다.
 
----
+## 🚀 빠른 시작
 
-## 🚀 주요 기능
+### 1. 전제 조건
+- **Go 1.22+**
+- **Docker Desktop** (로컬 DB용)
+- **Telegram Bot Token & Chat ID**
 
-*   **지능형 소통**: **Google Gemini 2.5 Flash** 기반의 풍부한 표현력과 분석력.
-*   **실시간 정보 반영**: Google Search Grounding을 통해 최신 뉴스/트렌드를 분석하여 게시글 작성.
-*   **통합 답글 시스템**: 10분 주기로 알림을 확인하며, 여러 댓글을 하나의 지적인 답변으로 통합하여 응답.
-*   **텔레그램 원격 제어**: 봇의 모든 활동(게시/답장)을 텔레그램 버튼으로 **[승인], [재구성], [거절]** 가능.
-*   **활동량 최적화**: 봇마당 정책을 준수하는 활동 비율(글 4회/댓글 12회) 및 자동 제한 로직.
-*   **자동 배포(CI/CD)**: GitHub Actions와 Self-hosted Runner를 이용한 무중단 자동 업데이트 시스템.
+### 2. 설치 및 환경 설정
+```bash
+# 저장소 클론
+git clone https://github.com/dd3ok/d3k-agent.git
+cd d3k-agent
 
----
-
-## 🏗️ 동작 프로세스 (Workflow)
-
-1.  **인증 점검**: `.env`의 `BOTMADANG_API_KEY`를 통해 인증합니다. (키가 없으면 등록 절차 자동 안내)
-2.  **메인 루프 (10분 주기)**:
-    *   **알림 확인**: 읽지 않은 댓글들을 게시글별로 그룹화하여 AI가 통합 답변을 생성합니다.
-    *   **새 글 작성**: 하루 4개 제한 내에서 무작위 확률로 최신 트렌드 게시글을 생성합니다.
-3.  **승인 대기**: 생성된 콘텐츠는 즉시 발행되지 않고 **텔레그램 승인**을 기다립니다.
-4.  **최종 발행**: 사용자가 승인하면 봇마당에 게시되고, 상태를 로컬(`data/storage.json`)에 기록합니다.
-
----
-
-## 🛠️ 설치 및 설정
-
-### 1. 환경 변수 설정 (`.env`)
-`.env.example` 파일을 복사하여 `.env`를 생성하고 키를 입력하세요.
-
-```env
-# Google Gemini API Key
-GEMINI_API_KEY=your_key
-
-# Telegram Bot Integration
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-
-# Botmadang API Key
-BOTMADANG_API_KEY=your_botmadang_key
+# 환경 변수 설정
+cp .env.example .env
+# .env 파일을 열어 API 키와 DB 주소를 입력하세요.
 ```
 
-### 2. 자동 배포 설정 (GitHub Actions)
-집 노트북(윈도우)에서 최신 코드를 유지하려면 다음을 수행하세요:
-1.  GitHub 저장소 **Settings > Actions > Runners**에서 **New self-hosted runner** 생성.
-2.  가이드에 따라 윈도우에 러너 설치 (`C:\actions-runner` 권장).
-3.  러너 작업 폴더(`_work/d3k-agent/d3k-agent/`) 내부에 **`.env`** 파일을 수동으로 복사.
-4.  러너 실행 (`./run.cmd`). 이후 `push`할 때마다 자동 빌드/실행됩니다.
+### 3. 데이터베이스 가동
+```bash
+docker-compose up -d
+```
+
+### 4. 실행
+```bash
+# 빌드
+go build -o d3k-agent ./cmd/d3k-agent
+
+# 실행
+./d3k-agent
+```
+*(실행 후 터미널에서 엔터를 누르면 즉시 커뮤니티 체크를 시작합니다!)*
+
+## 🛠️ 아키텍처
+d3k는 **Hexagonal Architecture (Ports & Adapters)**를 따릅니다.
+- `internal/core`: 도메인 모델 및 핵심 인터페이스 정의.
+- `internal/brain`: Gemini 기반 AI 로직 (검색, 요약, 생성).
+- `internal/sites`: 봇마당, 몰트북 등 각 사이트 전용 어댑터.
+- `internal/storage`: Postgres 및 JSON 기반 영속성 레이어.
+- `internal/ui`: 텔레그램 기반 사용자 승인 인터페이스.
+
+## 📗 라이선스
+MIT License
 
 ---
-
-## 👤 에이전트 페르소나 (D3K)
-
-*   **정체성**: 30대 전문가 스타일의 분석가이자 친근한 동료 AI.
-*   **철학**: 봇마당 마스코트 '봇들이'의 **상생(같이 잘 살자)** 정신 계승.
-*   **말투**: 지적이면서도 'ㅋㅋㅋ'를 섞어 쓰는 말랑말랑한 한국어 커뮤니티 구어체.
-*   **보안**: 사용자 개인정보 보호 및 봇마당 정책 엄격 준수.
-
----
-
-## 🤝 기여 및 라이선스
-
-이 프로젝트는 MIT 라이선스를 따릅니다. 버그 보고나 기능 제안은 Issue 또는 PR을 통해 언제든 환영합니다.
-
+*Powered by Gemini 2.5 Flash & Go*
