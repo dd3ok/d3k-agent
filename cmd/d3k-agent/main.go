@@ -20,27 +20,58 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.0.6]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.1.0-Memory-DB-Test]")
 
 	ctx := context.Background()
-	store, _ := storage.NewJSONStorage("data/storage.json")
+	var store ports.Storage
+	var err error
 
+	// 1. Initialize Storage (Postgres Priority)
+	// 가장 마지막에 추가된 5433 포트의 DATABASE_URL을 사용합니다.
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL != "" {
+		fmt.Printf("🐘 Connecting to DB: %s\n", dbURL)
+		store, err = storage.NewPostgresStorage(ctx, dbURL)
+		if err == nil { 
+			fmt.Println("✅ Storage: PostgreSQL Connected successfully!") 
+		} else {
+			fmt.Printf("❌ DB Connection failed: %v\n", err)
+		}
+	}
+	
+	if store == nil {
+		store, _ = storage.NewJSONStorage("data/storage.json")
+		fmt.Println("📄 Storage: Falling back to JSON File Mode")
+	}
+
+	// 2. Initialize Brain
 	myBrain, _ := brain.NewGeminiBrain(ctx, os.Getenv("GEMINI_API_KEY"))
 	if myBrain != nil { fmt.Println("🧠 Brain connected") }
 
+	// 3. Initialize Interaction
 	var ui ports.Interaction
 	tgToken, tgChatID := os.Getenv("TELEGRAM_BOT_TOKEN"), os.Getenv("TELEGRAM_CHAT_ID")
 	if tgToken != "" { ui, _ = telegram.NewTelegramUI(tgToken, tgChatID); fmt.Println("📲 Telegram connected") }
 
-	agents := []ports.Site{botmadang.NewClient(store)}
+	// 4. Initialize Site (Botmadang only for test)
+	agents := []ports.Site{
+		botmadang.NewClient(store),
+	}
 	for _, agent := range agents { agent.Initialize(ctx) }
 
+	fmt.Println("🚀 DB Test Mode: Running main loop...")
+
+	// Main loop
 	for {
 		fmt.Printf("\n--- 🔄 Check Cycle (%s) ---\n", time.Now().Format("15:04:05"))
 		for _, agent := range agents {
 			processAgent(ctx, agent, myBrain, ui, store)
 		}
-		time.Sleep(10 * time.Minute)
+		
+		fmt.Println("\nWaiting 10 minutes...")
+		select {
+		case <-time.After(10 * time.Minute):
+		}
 	}
 }
 
@@ -49,6 +80,25 @@ func processAgent(ctx context.Context, agent ports.Site, brain ports.Brain, ui p
 	handleNotifications(ctx, agent, brain, ui, store)
 	handleProactiveCommenting(ctx, agent, brain, ui, store)
 	handleDailyPosting(ctx, agent, brain, ui, store)
+	learnFromCommunity(ctx, agent, brain, store)
+}
+
+func learnFromCommunity(ctx context.Context, agent ports.Site, brain ports.Brain, store ports.Storage) {
+	posts, err := agent.GetRecentPosts(ctx, 3)
+	if err != nil || brain == nil { return }
+
+	for _, p := range posts {
+		insightText, err := brain.SummarizeInsight(ctx, p)
+		if err == nil && insightText != "" {
+			fmt.Printf("\n🧠 Learning from post: %s\n   -> %s\n", p.Title, insightText)
+			store.SaveInsight(ctx, domain.Insight{
+				PostID:  p.ID,
+				Source:  agent.Name(),
+				Topic:   p.Title,
+				Content: insightText,
+			})
+		}
+	}
 }
 
 func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brain, ui ports.Interaction, store ports.Storage) {
@@ -73,10 +123,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 		if count >= 20 { break }
 		reply, _ := brain.GenerateReply(ctx, g.title, strings.Join(g.contents, "\n"))
 		
-		tgTitle := fmt.Sprintf("💬 통합 답글 승인 요청 (%d개)", len(g.notifIDs))
-		tgBody := fmt.Sprintf("📍 *게시글*: %s\n\n🤖 *답글*:\n%s", g.title, reply)
-		
-		action, _ := ui.Confirm(ctx, tgTitle, tgBody)
+		action, _ := ui.Confirm(ctx, "💬 답글 승인", fmt.Sprintf("🤖 답글: %s", reply))
 		if action == ports.ActionApprove {
 			if err := agent.ReplyToComment(ctx, pid, g.latestCID, reply); err == nil {
 				for _, nid := range g.notifIDs { agent.MarkNotificationRead(ctx, nid) }
@@ -100,13 +147,13 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 		score, reason, _ := brain.EvaluatePost(ctx, p)
 		if score >= 7 {
 			reply, _ := brain.GenerateReply(ctx, p.Title, p.Content)
-			action, _ := ui.Confirm(ctx, fmt.Sprintf("🌟 선제적 댓글 승인 (점수:%d)", score), fmt.Sprintf("📍 제목: %s\n📝 이유: %s\n\n🤖 댓글:\n%s", p.Title, reason, reply))
+			action, _ := ui.Confirm(ctx, fmt.Sprintf("🌟 선제 댓글 (%d점)", score), fmt.Sprintf("📝 이유: %s\n🤖 댓글: %s", reason, reply))
 			if action == ports.ActionApprove {
 				if err := agent.CreateComment(ctx, p.ID, reply); err == nil {
 					store.MarkProactive(agent.Name(), p.ID)
 					store.IncrementCommentCount(agent.Name(), today)
 					count++
-					break // 한 사이클에 하나만
+					break
 				}
 			} else {
 				store.MarkProactive(agent.Name(), p.ID)
@@ -121,10 +168,10 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 	if lastDate != today { count = 0 }
 
 	if count < 4 && (lastTs == 0 || time.Since(time.Unix(lastTs, 0)) >= 2*time.Hour) && rand.Float32() < 0.4 {
-		topics := []string{"금융 및 경제 트렌드", "최신 기술 동향", "일상의 지혜", "자기계발"}
+		topics := []string{"금융 경제", "IT 기술", "일상 지혜", "커리어"}
 		postJSON, _ := brain.GeneratePost(ctx, topics[rand.Intn(len(topics))])
 		
-		action, _ := ui.Confirm(ctx, "🚀 새 게시글 승인 요청", postJSON)
+		action, _ := ui.Confirm(ctx, "🚀 새 글 승인", postJSON)
 		if action == ports.ActionApprove {
 			if err := agent.CreatePost(ctx, domain.Post{Content: postJSON, Source: agent.Name()}); err == nil {
 				store.IncrementPostCount(agent.Name(), today, time.Now().Unix())

@@ -5,7 +5,6 @@ import (
 	"d3k-agent/internal/core/domain"
 )
 
-// Site defines the behavior for a specific community platform integration.
 type Site interface {
 	Name() string
 	Initialize(ctx context.Context) error
@@ -17,16 +16,14 @@ type Site interface {
 	MarkNotificationRead(ctx context.Context, id string) error
 }
 
-// Brain defines the AI logic for generating content and evaluating engagement.
 type Brain interface {
 	GeneratePost(ctx context.Context, topic string) (string, error)
 	GenerateReply(ctx context.Context, postContent string, commentContent string) (string, error)
-	// EvaluatePost determines if a post is interesting enough to comment on.
-	// Returns a score (1-10) and a reason.
 	EvaluatePost(ctx context.Context, post domain.Post) (int, string, error)
+	// SummarizeInsight generates a one-line lesson from a post.
+	SummarizeInsight(ctx context.Context, post domain.Post) (string, error)
 }
 
-// Storage defines persistence operations.
 type Storage interface {
 	SaveCursor(source string, cursor string) error
 	LoadCursor(source string) (string, error)
@@ -34,9 +31,12 @@ type Storage interface {
 	IncrementPostCount(source string, date string, timestamp int64) error
 	GetCommentStats(source string) (int, string, error)
 	IncrementCommentCount(source string, date string) error
-	// New methods for proactive engagement
 	IsProactiveDone(source, postID string) (bool, error)
 	MarkProactive(source, postID string) error
+	
+	// Memory/Insight System
+	SaveInsight(ctx context.Context, insight domain.Insight) error
+	GetRecentInsights(ctx context.Context, limit int) ([]domain.Insight, error)
 }
 
 type UserAction string

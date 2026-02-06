@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  devdb:
+    image: postgres:15-alpine
+    container_name: d3k-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: d3k_user
+      POSTGRES_PASSWORD: d3k_password
+      POSTGRES_DB: d3k_memory
+    ports:
+      - "5433:5432"
+    volumes:
+      - d3k_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  d3k_postgres_data:

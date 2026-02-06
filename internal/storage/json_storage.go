@@ -1,10 +1,12 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
+	"d3k-agent/internal/core/domain"
 	"d3k-agent/internal/core/ports"
 )
 
@@ -121,9 +123,9 @@ func (s *JSONStorage) MarkProactive(source, postID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Data.ProactivePostIDs[source] = append(s.Data.ProactivePostIDs[source], postID)
-	// 최근 100개만 유지
-	if len(s.Data.ProactivePostIDs[source]) > 100 {
-		s.Data.ProactivePostIDs[source] = s.Data.ProactivePostIDs[source][1:]
-	}
 	return s.saveToFile()
 }
+
+// Memory System Stubs for JSON (To satisfy interface)
+func (s *JSONStorage) SaveInsight(ctx context.Context, insight domain.Insight) error { return nil }
+func (s *JSONStorage) GetRecentInsights(ctx context.Context, limit int) ([]domain.Insight, error) { return nil, nil }

@@ -36,3 +36,13 @@ type Notification struct {
 	IsRead    bool
 	CreatedAt time.Time
 }
+
+// Insight represents AI's processed thoughts about a post.
+type Insight struct {
+	ID        int64
+	PostID    string
+	Source    string
+	Topic     string
+	Content   string // D3K's impression or lesson learned
+	CreatedAt time.Time
+}
