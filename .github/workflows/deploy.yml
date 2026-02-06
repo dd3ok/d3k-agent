@@ -13,6 +13,19 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
+      - name: Debug - List Files
+        shell: powershell
+        run: |
+          Write-Host "📂 Current Directory: $(Get-Location)"
+          Write-Host "📄 Listing files in root:"
+          ls
+          if (Test-Path "./cmd") {
+              Write-Host "✅ 'cmd' directory found."
+              ls ./cmd
+          } else {
+              Write-Host "❌ 'cmd' directory NOT found."
+          }
+
       - name: Stop existing process
         shell: powershell
         run: |
@@ -27,7 +40,8 @@ jobs:
         shell: powershell
         run: |
           Write-Host "🔨 Building Go binary..."
-          go build -o d3k-agent.exe ./cmd/d3k-agent
+          # Use absolute path-like syntax for Windows Go build
+          go build -o d3k-agent.exe ./cmd/d3k-agent/
           if (!(Test-Path "./d3k-agent.exe")) {
               throw "Build failed: d3k-agent.exe not created"
           }
@@ -36,7 +50,8 @@ jobs:
         shell: powershell
         run: |
           Write-Host "🚀 Starting D3K Agent in background..."
-          # Start-Process with explicit working directory
           $workDir = Get-Location
+          # Ensure log files exist or are cleared
+          New-Item -ItemType File -Path "./bot_output.log" -Force | Out-Null
           Start-Process -FilePath "./d3k-agent.exe" -WorkingDirectory $workDir -NoNewWindow -RedirectStandardOutput "./bot_output.log" -RedirectStandardError "./bot_error.log"
-          Write-Host "✅ Deployment complete. Log saved to bot_output.log"
+          Write-Host "✅ Deployment complete. Check bot_output.log for details."
