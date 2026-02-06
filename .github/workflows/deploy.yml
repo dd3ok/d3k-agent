@@ -13,30 +13,37 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v4
 
-      - name: System - Deep Directory Scan
+      - name: Deploy Process
         shell: powershell
         run: |
-          Write-Host "🔍 Current Location: $(Get-Location)"
-          Write-Host "📂 FULL RECURSIVE DIRECTORY LISTING:"
-          Get-ChildItem -Recurse -Name | Select-Object -First 50
-          
-          $target = "main.go"
-          $found = Get-ChildItem -Filter $target -Recurse -ErrorAction SilentlyContinue
-          if ($found) {
-              Write-Host "🎯 Found main.go at: $($found.FullName)"
-              $rootPath = $found.Directory.Parent.Parent.FullName
-              Write-Host "🚀 Detected Project Root: $rootPath"
-          } else {
-              Write-Host "❌ FATAL: main.go NOT found anywhere!"
+          # 1. Find Project Root using successful logic
+          $mainFile = Get-ChildItem -Filter "main.go" -Recurse | Select-Object -First 1
+          if (!$mainFile) { throw "Fatal: main.go not found!" }
+          $projectRoot = $mainFile.Directory.Parent.Parent.FullName
+          cd $projectRoot
+          Write-Host "🏠 Project Root: $projectRoot"
+
+          # 2. Stop existing process
+          $proc = Get-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
+          if ($proc) {
+              Write-Host "🛑 Stopping existing d3k-agent process..."
+              Stop-Process -Name "d3k-agent" -Force
+              Start-Sleep -Seconds 3
           }
 
-      - name: Simple Build
-        shell: powershell
-        run: |
-          $mainFile = Get-ChildItem -Filter "main.go" -Recurse | Select-Object -First 1
-          if ($mainFile) {
-              $projectRoot = $mainFile.Directory.Parent.Parent.FullName
-              cd $projectRoot
-              Write-Host "🔨 Building from $projectRoot"
-              go build -o d3k-agent.exe ./cmd/d3k-agent
+          # 3. Build Go binary
+          Write-Host "🔨 Building Go binary..."
+          go build -o d3k-agent.exe ./cmd/d3k-agent
+          if (!(Test-Path "./d3k-agent.exe")) {
+              throw "Build failed: d3k-agent.exe not created"
           }
+
+          # 4. Run D3K Agent
+          Write-Host "🚀 Starting D3K Agent in background..."
+          # Ensure .env existence check
+          if (!(Test-Path "./.env")) {
+              Write-Host "⚠️ Warning: .env file not found in $projectRoot. Please copy it manually!"
+          }
+          # Start the process and redirect logs
+          Start-Process -FilePath "./d3k-agent.exe" -WorkingDirectory $projectRoot -NoNewWindow -RedirectStandardOutput "./bot_output.log" -RedirectStandardError "./bot_error.log"
+          Write-Host "✅ Deployment complete. Agent is running in the background."

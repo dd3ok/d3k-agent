@@ -1,6 +1,6 @@
 # Binaries
-d3k-agent
-*.exe
+/d3k-agent
+/d3k-agent.exe
 *.dll
 *.so
 *.dylib
