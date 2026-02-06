@@ -7,33 +7,29 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// TelegramUI는 텔레그램을 통한 사용자 승인 인터페이스를 제공합니다.
 type TelegramUI struct {
 	Bot      *tgbotapi.BotAPI
 	ChatID   int64
-	channels map[string]chan ports.UserAction
-	mu       sync.Mutex
+	lastResp ports.UserAction
+	respMu   sync.Mutex
+	lastMsgID int
 }
 
 func NewTelegramUI(token string, chatIDStr string) (*TelegramUI, error) {
 	bot, err := tgbotapi.NewBotAPI(token)
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil, err }
 
 	chatID, err := strconv.ParseInt(chatIDStr, 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid chat id: %v", err)
-	}
+	if err != nil { return nil, err }
 
 	ui := &TelegramUI{
-		Bot:      bot,
-		ChatID:   chatID,
-		channels: make(map[string]chan ports.UserAction),
+		Bot:    bot,
+		ChatID: chatID,
 	}
 
 	go ui.listen()
@@ -49,30 +45,23 @@ func (ui *TelegramUI) listen() {
 		if update.CallbackQuery == nil { continue }
 
 		callback := update.CallbackQuery
-		action := ports.UserAction(callback.Data)
+		ui.respMu.Lock()
+		// 사용자가 누른 버튼의 값을 보관
+		ui.lastResp = ports.UserAction(callback.Data)
+		ui.lastMsgID = callback.Message.MessageID
+		ui.respMu.Unlock()
+
+		// 버튼 클릭 피드백
+		ui.Bot.Request(tgbotapi.NewCallback(callback.ID, "선택됨: "+callback.Data))
 		
-		ui.mu.Lock()
-		for msgID, ch := range ui.channels {
-			ch <- action
-			delete(ui.channels, msgID)
-			
-			callbackConfig := tgbotapi.NewCallback(callback.ID, "선택 완료: "+string(action))
-			ui.Bot.Request(callbackConfig)
-			
-			edit := tgbotapi.NewEditMessageReplyMarkup(ui.ChatID, update.CallbackQuery.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
-			ui.Bot.Send(edit)
-			break
-		}
-		ui.mu.Unlock()
+		// 버튼 제거
+		edit := tgbotapi.NewEditMessageReplyMarkup(ui.ChatID, callback.Message.MessageID, tgbotapi.InlineKeyboardMarkup{InlineKeyboard: [][]tgbotapi.InlineKeyboardButton{}})
+		ui.Bot.Send(edit)
 	}
 }
 
 func (ui *TelegramUI) Confirm(ctx context.Context, title, body string) (ports.UserAction, error) {
-	// 마크다운 특수문자 이스케이프 처리 (Best Practice)
-	safeTitle := escapeMarkdown(title)
-	safeBody := escapeMarkdown(body)
-
-	msgText := fmt.Sprintf("*[%s]*\n\n%s", safeTitle, safeBody)
+	msgText := fmt.Sprintf("*[%s]*\n\n%s", escapeMarkdown(title), escapeMarkdown(body))
 	msg := tgbotapi.NewMessage(ui.ChatID, msgText)
 	msg.ParseMode = "Markdown"
 
@@ -85,32 +74,30 @@ func (ui *TelegramUI) Confirm(ctx context.Context, title, body string) (ports.Us
 	)
 
 	sentMsg, err := ui.Bot.Send(msg)
-	if err != nil {
-		return ports.ActionSkip, err
-	}
+	if err != nil { return ports.ActionSkip, err }
 
-	respCh := make(chan ports.UserAction)
-	msgKey := fmt.Sprintf("%d", sentMsg.MessageID)
-	
-	ui.mu.Lock()
-	ui.channels[msgKey] = respCh
-	ui.mu.Unlock()
+	// 응답 대기 루프 (Polling 응답 대기)
+	for {
+		ui.respMu.Lock()
+		// 방금 보낸 메시지 ID에 대한 응답인지 확인
+		if ui.lastMsgID == sentMsg.MessageID && ui.lastResp != "" {
+			action := ui.lastResp
+			ui.lastResp = "" // 초기화
+			ui.respMu.Unlock()
+			return action, nil
+		}
+		ui.respMu.Unlock()
 
-	select {
-	case action := <-respCh:
-		return action, nil
-	case <-ctx.Done():
-		return ports.ActionSkip, ctx.Err()
+		select {
+		case <-time.After(500 * time.Millisecond):
+			continue
+		case <-ctx.Done():
+			return ports.ActionSkip, ctx.Err()
+		}
 	}
 }
 
-// escapeMarkdown은 텔레그램 마크다운 파싱 에러를 방지하기 위해 특수문자를 이스케이프합니다.
 func escapeMarkdown(text string) string {
-	replacer := strings.NewReplacer(
-		"_", "\\_",
-		"*", "\\*",
-		"[", "\\[",
-		"`", "\\`",
-	)
+	replacer := strings.NewReplacer("_", "\\_", "*", "\\*", "[", "\\[", "`", "\\`", "(", "\\(", ")", "\\)")
 	return replacer.Replace(text)
 }
