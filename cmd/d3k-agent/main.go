@@ -24,7 +24,7 @@ func main() {
 		fmt.Println("ℹ️  Note: .env file not found, using system environment variables.")
 	}
 
-	fmt.Println("🤖 D3K Integrated Agent Starting...")
+	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.1]")
 
 	ctx := context.Background()
 
