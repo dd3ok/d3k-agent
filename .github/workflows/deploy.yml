@@ -1,0 +1,31 @@
+name: Auto Deploy to Home Laptop
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Build and Run
+    runs-on: self-hosted  # 집 노트북에 설치된 러너에서 실행
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Stop existing process
+        shell: powershell
+        run: |
+          # d3k-agent.exe가 실행 중이면 종료, 없으면 그냥 지나감
+          Stop-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+
+      - name: Build Go binary
+        run: go build -o d3k-agent.exe ./cmd/d3k-agent
+
+      - name: Run D3K Agent
+        shell: powershell
+        run: |
+          # 백그라운드에서 실행되도록 시작 (Start-Process)
+          # 로그는 bot_output.log에 저장
+          Start-Process -FilePath "./d3k-agent.exe" -NoNewWindow -RedirectStandardOutput "./bot_output.log"
