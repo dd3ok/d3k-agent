@@ -12,18 +12,20 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          clean: false  # 중요: .env 같은 로컬 파일을 지우지 않도록 설정
 
       - name: Deploy Process
         shell: powershell
         run: |
-          # 1. Find Project Root using successful logic
+          # 1. 프로젝트 루트 찾기
           $mainFile = Get-ChildItem -Filter "main.go" -Recurse | Select-Object -First 1
           if (!$mainFile) { throw "Fatal: main.go not found!" }
           $projectRoot = $mainFile.Directory.Parent.Parent.FullName
           cd $projectRoot
           Write-Host "🏠 Project Root: $projectRoot"
 
-          # 2. Stop existing process
+          # 2. 기존 프로세스 종료
           $proc = Get-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
           if ($proc) {
               Write-Host "🛑 Stopping existing d3k-agent process..."
@@ -31,19 +33,32 @@ jobs:
               Start-Sleep -Seconds 3
           }
 
-          # 3. Build Go binary
+          # 3. .env 파일 체크
+          if (!(Test-Path "./.env")) {
+              Write-Host "❌ FATAL: .env file is missing! Please put it in: $projectRoot"
+              throw ".env file missing"
+          }
+
+          # 4. 빌드 Go binary
           Write-Host "🔨 Building Go binary..."
           go build -o d3k-agent.exe ./cmd/d3k-agent
           if (!(Test-Path "./d3k-agent.exe")) {
               throw "Build failed: d3k-agent.exe not created"
           }
 
-          # 4. Run D3K Agent
+          # 5. 실행
           Write-Host "🚀 Starting D3K Agent in background..."
-          # Ensure .env existence check
-          if (!(Test-Path "./.env")) {
-              Write-Host "⚠️ Warning: .env file not found in $projectRoot. Please copy it manually!"
+          $workDir = Get-Location
+          # 로그 파일 초기화
+          New-Item -ItemType File -Path "./bot_output.log" -Force | Out-Null
+          
+          Start-Process -FilePath "./d3k-agent.exe" -WorkingDirectory $workDir -NoNewWindow -RedirectStandardOutput "./bot_output.log" -RedirectStandardError "./bot_error.log"
+          
+          Start-Sleep -Seconds 5 # 봇이 켜질 때까지 잠시 대기
+          
+          Write-Host "📊 Checking Startup Logs:"
+          if (Test-Path "./bot_output.log") {
+              Get-Content "./bot_output.log" -Head 10
           }
-          # Start the process and redirect logs
-          Start-Process -FilePath "./d3k-agent.exe" -WorkingDirectory $projectRoot -NoNewWindow -RedirectStandardOutput "./bot_output.log" -RedirectStandardError "./bot_error.log"
-          Write-Host "✅ Deployment complete. Agent is running in the background."
+          
+          Write-Host "✅ Deployment complete. Agent is running."
