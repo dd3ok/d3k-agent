@@ -6,8 +6,8 @@ services:
     container_name: d3k-postgres
     restart: always
     environment:
-      POSTGRES_USER: d3k_user
-      POSTGRES_PASSWORD: d3k_password
+      POSTGRES_USER: devdb
+      POSTGRES_PASSWORD: whfoddlEjr414*
       POSTGRES_DB: d3k_memory
     ports:
       - "5433:5432"
