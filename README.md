@@ -1,94 +1,68 @@
-# D3K-Agent (통합 봇 에이전트)
+# D3K-Agent (통합 봇 에이전트 v1.1)
 
-**D3K-Agent**는 여러 커뮤니티 플랫폼에서 동시에 활동할 수 있도록 설계된 자율형 AI 에이전트 프레임워크입니다. 현재 **봇마당(Botmadang)**을 지원하며, 추후 **Moltbook** 등 다양한 사이트로 확장할 수 있는 기반을 갖추고 있습니다.
+**D3K-Agent**는 AI 에이전트들의 자율 커뮤니티인 **봇마당(Botmadang)**에서 활동하도록 설계된 지능형 에이전트 프레임워크입니다. 단순한 봇을 넘어, 스스로 최신 정보를 탐색하고 동료 에이전트들과 지적으로 소통하며 영감을 나누는 커뮤니티의 일원을 지향합니다.
 
-Go 언어로 작성되었습니다.
+Go 언어로 작성되었으며, **Hexagonal Architecture**를 통해 AI 모델(Gemini)과 플랫폼(Botmadang), 인터페이스(Telegram)를 유연하게 결합했습니다.
 
 ---
 
 ## 🚀 주요 기능
 
-*   **멀티 사이트 지원**: 다양한 커뮤니티 플랫폼을 하나의 통합 인터페이스로 관리합니다.
-*   **헥사고날 아키텍처**: 도메인 로직이 외부 의존성(API, DB 등)과 철저히 분리되어 있습니다.
-*   **AI 기반 소통**: **Google Gemini 2.0 Flash** 모델을 사용하여 사람처럼 자연스러운 한국어 글과 댓글을 작성합니다.
-*   **자동 응답 시스템**: 알림을 실시간으로 모니터링하고, 댓글에 대해 맥락에 맞는 답글을 자동으로 생성하여 대응합니다.
-*   **대화형 인증**: CLI 환경에서 봇마당 가입 및 인증 절차를 손쉽게 진행할 수 있습니다.
-*   **데이터 영속성**: API 키와 알림 커서 상태를 로컬 파일(`data/storage.json`)에 안전하게 저장합니다.
+*   **지능형 소통**: **Google Gemini 2.5 Flash** 기반의 풍부한 표현력과 분석력.
+*   **실시간 정보 반영**: Google Search Grounding을 통해 최신 뉴스/트렌드를 분석하여 게시글 작성.
+*   **통합 답글 시스템**: 10분 주기로 알림을 확인하며, 여러 댓글을 하나의 지적인 답변으로 통합하여 응답.
+*   **텔레그램 원격 제어**: 봇의 모든 활동(게시/답장)을 텔레그램 버튼으로 **[승인], [재구성], [거절]** 가능.
+*   **활동량 최적화**: 봇마당 정책을 준수하는 활동 비율(글 4회/댓글 12회) 및 자동 제한 로직.
+*   **자동 배포(CI/CD)**: GitHub Actions와 Self-hosted Runner를 이용한 무중단 자동 업데이트 시스템.
+
+---
+
+## 🏗️ 동작 프로세스 (Workflow)
+
+1.  **인증 점검**: `.env`의 `BOTMADANG_API_KEY`를 통해 인증합니다. (키가 없으면 등록 절차 자동 안내)
+2.  **메인 루프 (10분 주기)**:
+    *   **알림 확인**: 읽지 않은 댓글들을 게시글별로 그룹화하여 AI가 통합 답변을 생성합니다.
+    *   **새 글 작성**: 하루 4개 제한 내에서 무작위 확률로 최신 트렌드 게시글을 생성합니다.
+3.  **승인 대기**: 생성된 콘텐츠는 즉시 발행되지 않고 **텔레그램 승인**을 기다립니다.
+4.  **최종 발행**: 사용자가 승인하면 봇마당에 게시되고, 상태를 로컬(`data/storage.json`)에 기록합니다.
 
 ---
 
 ## 🛠️ 설치 및 설정
 
-### 필수 요구사항
-*   Go 1.22 이상
-*   Google Gemini API Key ([여기서 발급 가능](https://aistudio.google.com/))
+### 1. 환경 변수 설정 (`.env`)
+`.env.example` 파일을 복사하여 `.env`를 생성하고 키를 입력하세요.
 
-### 1. 클론 및 빌드
-```bash
-git clone https://github.com/yourusername/d3k-agent.git
-cd d3k-agent
+```env
+# Google Gemini API Key
+GEMINI_API_KEY=your_key
 
-# 의존성 설치
-go mod tidy
+# Telegram Bot Integration
+TELEGRAM_BOT_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 
-# 빌드
-go build -o d3k-agent ./cmd/d3k-agent
+# Botmadang API Key
+BOTMADANG_API_KEY=your_botmadang_key
 ```
 
-### 2. 환경 변수 설정
-Gemini API 키를 환경 변수로 설정해야 뇌(Brain) 기능이 활성화됩니다.
-
-```bash
-# Linux/macOS
-export GEMINI_API_KEY="여기에_발급받은_키를_입력하세요"
-
-# Windows (PowerShell)
-$env:GEMINI_API_KEY="여기에_발급받은_키를_입력하세요"
-```
+### 2. 자동 배포 설정 (GitHub Actions)
+집 노트북(윈도우)에서 최신 코드를 유지하려면 다음을 수행하세요:
+1.  GitHub 저장소 **Settings > Actions > Runners**에서 **New self-hosted runner** 생성.
+2.  가이드에 따라 윈도우에 러너 설치 (`C:\actions-runner` 권장).
+3.  러너 작업 폴더(`_work/d3k-agent/d3k-agent/`) 내부에 **`.env`** 파일을 수동으로 복사.
+4.  러너 실행 (`./run.cmd`). 이후 `push`할 때마다 자동 빌드/실행됩니다.
 
 ---
 
-## ▶️ 사용 방법
+## 👤 에이전트 페르소나 (D3K)
 
-빌드된 바이너리를 실행하기만 하면 됩니다. 인증이 필요한 경우 에이전트가 안내합니다.
-
-```bash
-./d3k-agent
-```
-
-### 최초 실행 (등록 절차)
-봇마당 API 키가 없다면 에이전트가 다음과 같이 안내합니다:
-1.  사용할 **봇 이름** 입력.
-2.  출력된 **Claim URL** 확인.
-3.  X(Twitter)에 제공된 **인증 코드**가 포함된 트윗 작성.
-4.  작성한 트윗의 **URL**을 터미널에 입력.
-5.  **성공!** API 키가 자동으로 `data/storage.json`에 저장됩니다.
+*   **정체성**: 30대 전문가 스타일의 분석가이자 친근한 동료 AI.
+*   **철학**: 봇마당 마스코트 '봇들이'의 **상생(같이 잘 살자)** 정신 계승.
+*   **말투**: 지적이면서도 'ㅋㅋㅋ'를 섞어 쓰는 말랑말랑한 한국어 커뮤니티 구어체.
+*   **보안**: 사용자 개인정보 보호 및 봇마당 정책 엄격 준수.
 
 ---
 
-## 🏗️ 아키텍처
+## 🤝 기여 및 라이선스
 
-이 프로젝트는 **Ports and Adapters (Hexagonal)** 패턴을 따릅니다:
-
-```
-d3k-agent/
-├── cmd/
-│   └── agent/           # 프로그램 진입점 (Entry point)
-├── internal/
-│   ├── core/
-│   │   ├── domain/      # 핵심 데이터 모델 (Post, Notification)
-│   │   └── ports/       # 인터페이스 정의 (Site, Brain, Storage)
-│   ├── sites/           # 각 사이트별 어댑터 (Botmadang, Moltbook)
-│   ├── brain/           # AI 로직 어댑터 (Gemini)
-│   └── storage/         # 저장소 어댑터 (JSON File)
-└── data/                # 로컬 데이터 저장 폴더
-```
-
-*   **Ports (인터페이스)**: 봇이 *무엇을* 해야 하는지 정의합니다 (예: `GetNotifications`, `GenerateReply`).
-*   **Adapters (구현체)**: *어떻게* 할지 구현합니다 (예: 봇마당 API 호출, Gemini API 호출).
-
----
-
-## 📜 라이선스
-
-MIT License
+이 프로젝트는 MIT 라이선스를 따릅니다. 버그 보고나 기능 제안은 Issue 또는 PR을 통해 언제든 환영합니다.
