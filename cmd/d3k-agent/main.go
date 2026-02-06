@@ -21,7 +21,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.1.1-Instant]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.1.2-DB-Debug]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -29,12 +29,20 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL != "" {
+		fmt.Printf("🔍 Attempting to connect to DB... (URL: %s)\n", maskDBURL(dbURL))
 		store, err = storage.NewPostgresStorage(ctx, dbURL)
-		if err == nil { fmt.Println("🐘 Storage: PostgreSQL Connected") }
+		if err == nil { 
+			fmt.Println("🐘 Storage: PostgreSQL Connected successfully!") 
+		} else {
+			fmt.Printf("⚠️  DB Connection failed: %v\n", err)
+		}
+	} else {
+		fmt.Println("ℹ️  DATABASE_URL is empty in environment.")
 	}
+	
 	if store == nil {
 		store, _ = storage.NewJSONStorage("data/storage.json")
-		fmt.Println("📄 Storage: JSON File Mode")
+		fmt.Println("📄 Storage: Using JSON File Mode as fallback.")
 	}
 
 	myBrain, _ := brain.NewGeminiBrain(ctx, os.Getenv("GEMINI_API_KEY"))
@@ -42,11 +50,9 @@ func main() {
 
 	agents := []ports.Site{
 		botmadang.NewClient(store),
-		// moltbook.NewClient(store), // 몰트북은 일단 제외
 	}
 	for _, agent := range agents { agent.Initialize(ctx) }
 
-	// 수동 트리거를 위한 채널
 	trigger := make(chan bool, 1)
 	go func() {
 		reader := bufio.NewReader(os.Stdin)
@@ -56,7 +62,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System ready. (Tip: Press Enter to trigger check immediately)")
+	fmt.Println("🚀 System ready. (Press Enter to trigger check)")
 
 	firstRun := true
 	for {
@@ -66,13 +72,24 @@ func main() {
 		}
 		firstRun = false
 
-		fmt.Println("\nWaiting 10 minutes... (or press Enter to skip wait)")
+		fmt.Println("\nWaiting 10 minutes...")
 		select {
 		case <-time.After(10 * time.Minute):
 		case <-trigger:
-			fmt.Println("⚡ Manual trigger received!")
+			fmt.Println("⚡ Manual trigger!")
 		}
 	}
+}
+
+// 비밀번호 마스킹 (로그 보안용)
+func maskDBURL(url string) string {
+	if !strings.Contains(url, "@") { return url }
+	parts := strings.Split(url, "@")
+	prefixParts := strings.Split(parts[0], ":")
+	if len(prefixParts) > 2 {
+		return prefixParts[0] + ":****@" + parts[1]
+	}
+	return url
 }
 
 func processAgent(ctx context.Context, agent ports.Site, brain ports.Brain, ui ports.Interaction, store ports.Storage, firstRun bool) {
@@ -89,6 +106,7 @@ func learnFromCommunity(ctx context.Context, agent ports.Site, brain ports.Brain
 	for _, p := range posts {
 		insightText, err := brain.SummarizeInsight(ctx, p)
 		if err == nil && insightText != "" {
+			fmt.Printf("\n🧠 Learning: %s\n", p.Title)
 			store.SaveInsight(ctx, domain.Insight{PostID: p.ID, Source: agent.Name(), Topic: p.Title, Content: insightText})
 		}
 	}
@@ -98,10 +116,8 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 	today := time.Now().Format("2006-01-02")
 	count, _, _ := store.GetCommentStats(agent.Name())
 	if count >= 20 { return }
-
 	notifs, _ := agent.GetNotifications(ctx, true)
 	if len(notifs) == 0 { fmt.Print("0 notifs. "); return }
-
 	groups := make(map[string]struct{ title, latestCID string; contents, notifIDs []string })
 	for _, n := range notifs {
 		if n.Type != "comment_on_post" && n.Type != "reply_to_comment" { continue }
@@ -110,11 +126,10 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 		g.notifIDs = append(g.notifIDs, n.ID)
 		groups[n.PostID] = g
 	}
-
 	for pid, g := range groups {
 		if brain == nil || ui == nil || count >= 20 { break }
 		reply, _ := brain.GenerateReply(ctx, g.title, strings.Join(g.contents, "\n"))
-		action, _ := ui.Confirm(ctx, "💬 ["+agent.Name()+"] 답글 승인", fmt.Sprintf("🤖 답글: %s", reply))
+		action, _ := ui.Confirm(ctx, "💬 답글 승인", fmt.Sprintf("🤖 답글: %s", reply))
 		if action == ports.ActionApprove {
 			if err := agent.ReplyToComment(ctx, pid, g.latestCID, reply); err == nil {
 				for _, nid := range g.notifIDs { agent.MarkNotificationRead(ctx, nid) }
@@ -129,14 +144,13 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 	today := time.Now().Format("2006-01-02")
 	count, _, _ := store.GetCommentStats(agent.Name())
 	if count >= 20 || brain == nil || ui == nil { return }
-
 	posts, _ := agent.GetRecentPosts(ctx, 5)
 	for _, p := range posts {
 		if done, _ := store.IsProactiveDone(agent.Name(), p.ID); done || count >= 20 { continue }
 		score, reason, _ := brain.EvaluatePost(ctx, p)
 		if score >= 7 {
 			reply, _ := brain.GenerateReply(ctx, p.Title, p.Content)
-			action, _ := ui.Confirm(ctx, fmt.Sprintf("🌟 [%s] 선제 댓글 (%d점)", agent.Name(), score), fmt.Sprintf("📝 이유: %s\n🤖 댓글: %s", reason, reply))
+			action, _ := ui.Confirm(ctx, fmt.Sprintf("🌟 선제 댓글 (%d점)", score), fmt.Sprintf("📝 이유: %s\n🤖 댓글: %s", reason, reply))
 			if action == ports.ActionApprove {
 				if err := agent.CreateComment(ctx, p.ID, reply); err == nil {
 					store.MarkProactive(agent.Name(), p.ID)
@@ -155,16 +169,12 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 	today := time.Now().Format("2006-01-02")
 	count, lastDate, lastTs, _ := store.GetPostStats(agent.Name())
 	if lastDate != today { count = 0 }
-
-	// 첫 실행(배포 직후)이거나, 2시간이 지났고 40% 확률에 당첨된 경우
 	canPost := firstRun || (lastTs == 0 || time.Since(time.Unix(lastTs, 0)) >= 2*time.Hour)
 	if count < 4 && canPost {
-		// firstRun일 때는 확률 체크를 무시하고 진행
 		if !firstRun && rand.Float32() > 0.4 { return }
-
 		topics := []string{"금융 경제", "IT 기술", "일상 지혜", "커리어"}
 		postJSON, _ := brain.GeneratePost(ctx, topics[rand.Intn(len(topics))])
-		action, _ := ui.Confirm(ctx, "🚀 ["+agent.Name()+"] 새 글 승인", postJSON)
+		action, _ := ui.Confirm(ctx, "🚀 새 글 승인", postJSON)
 		if action == ports.ActionApprove {
 			if err := agent.CreatePost(ctx, domain.Post{Content: postJSON, Source: agent.Name()}); err == nil {
 				store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
