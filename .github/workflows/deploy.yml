@@ -18,43 +18,37 @@ jobs:
       - name: Build New Binary
         shell: powershell
         run: |
-          # 1. 프로젝트 루트 찾기
           $mainFile = Get-ChildItem -Filter "main.go" -Recurse | Select-Object -First 1
-          if (!$mainFile) { throw "Fatal: main.go not found!" }
           $projectRoot = $mainFile.Directory.Parent.Parent.FullName
           cd $projectRoot
-          Write-Host "🏠 Project Root: $projectRoot"
-
-          # 2. 빌드 먼저 수행 (기존 봇은 아직 살아있음)
-          Write-Host "🔨 Building new binary to temp file..."
+          Write-Host "🔨 Building new version..."
           go build -o d3k-agent-new.exe ./cmd/d3k-agent
           if (!(Test-Path "./d3k-agent-new.exe")) { throw "Build Failed!" }
-          Write-Host "✅ New version built successfully."
 
-      - name: Swap and Launch
+      - name: Hard Reset and Launch
         shell: powershell
         env:
-          # 중요: 깃허브 러너가 프로세스를 추적하여 강제로 죽이는 것을 방지
           RUNNER_TRACKING_ID: ""
         run: |
           $mainFile = Get-ChildItem -Filter "main.go" -Recurse | Select-Object -First 1
           $projectRoot = $mainFile.Directory.Parent.Parent.FullName
           cd $projectRoot
 
-          # 1. 기존 프로세스 종료 (교체 직전에만)
-          $proc = Get-Process -Name "d3k-agent" -ErrorAction SilentlyContinue
-          if ($proc) {
-              Write-Host "🛑 Stopping old agent for update..."
-              Stop-Process -Name "d3k-agent" -Force
-              Start-Sleep -Seconds 2
-          }
+          Write-Host "🛑 Killing existing agent processes and windows..."
+          # 1. d3k-agent.exe 프로세스 강제 종료
+          taskkill /F /IM d3k-agent.exe /T 2>$null
+          
+          # 2. 특정 타이틀을 가진 PowerShell 창 종료 (나중에 실행할 때 타이틀을 부여할 예정)
+          Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*D3K-AGENT-WINDOW*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+          
+          Start-Sleep -Seconds 2
 
-          # 2. 바이너리 교체
+          # 3. 파일 교체
           Move-Item -Path "./d3k-agent-new.exe" -Destination "./d3k-agent.exe" -Force
 
-          # 3. 새 창에서 실행 (배포 작업 종료 후에도 살아남도록 처리)
-          Write-Host "🚀 Launching new agent window..."
-          # Start-Process를 통해 완전히 독립된 프로세스로 실행
-          Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", "& './d3k-agent.exe'" -WorkingDirectory $projectRoot
+          # 4. 새 창에서 고유 타이틀과 함께 실행
+          Write-Host "🚀 Launching version [v1.0.3] in a new window..."
+          $cmd = "`$Host.UI.RawUI.WindowTitle = 'D3K-AGENT-WINDOW'; ./d3k-agent.exe"
+          Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmd -WorkingDirectory $projectRoot
           
-          Write-Host "✨ Update Complete! The bot window should be visible and persistent."
+          Write-Host "✨ Deployment Successful. Old windows cleaned up."

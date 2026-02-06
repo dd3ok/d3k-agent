@@ -24,7 +24,7 @@ func main() {
 		fmt.Println("ℹ️  Note: .env file not found, using system environment variables.")
 	}
 
-	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.2]")
+	fmt.Println("🤖 D3K Integrated Agent Starting... [v1.0.3]")
 
 	ctx := context.Background()
 
@@ -39,11 +39,7 @@ func main() {
 		myBrain, err = brain.NewGeminiBrain(ctx, brainKey)
 		if err == nil {
 			fmt.Println("🧠 Brain connected (Gemini)")
-		} else {
-			fmt.Printf("❌ Brain connection failed: %v\n", err)
 		}
-	} else {
-		fmt.Println("❌ GEMINI_API_KEY missing in .env")
 	}
 
 	var ui ports.Interaction
@@ -51,17 +47,9 @@ func main() {
 	tgChatID := os.Getenv("TELEGRAM_CHAT_ID")
 	if tgToken != "" && tgChatID != "" {
 		ui, err = telegram.NewTelegramUI(tgToken, tgChatID)
-		if err != nil {
-			log.Printf("⚠️  Telegram initialization failed: %v", err)
-		} else {
+		if err == nil {
 			fmt.Println("📲 Telegram Bot connected and ready")
 		}
-	} else {
-		fmt.Println("❌ Telegram credentials missing in .env")
-	}
-
-	if os.Getenv("BOTMADANG_API_KEY") == "" {
-		fmt.Println("❌ BOTMADANG_API_KEY missing in .env. Registration will be required.")
 	}
 
 	agents := []ports.Site{
@@ -73,9 +61,8 @@ func main() {
 		}
 	}
 
-	fmt.Println("🚀 All systems ready. Entering main loop...")
+	fmt.Println("🚀 System fully operational. Listening for activities...")
 
-	// Main loop
 	for {
 		fmt.Printf("\n--- 🔄 Check Cycle (%s) ---\n", time.Now().Format("15:04:05"))
 		for _, agent := range agents {
@@ -124,7 +111,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 	}
 	
 	if len(notifs) == 0 {
-		fmt.Print("No new notifications. ")
+		fmt.Print("0 unread notifications. ") // 알람이 없음을 명시적으로 표시
 		return
 	}
 
@@ -143,27 +130,21 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 	}
 
 	if len(groups) > 0 {
-		fmt.Printf("\n🔔 Found notifications across %d posts.\n", len(groups))
+		fmt.Printf("\n🔔 Found %d actionable notifications across %d posts.\n", len(notifs), len(groups))
 	} else {
-		fmt.Print("No actionable notifications. ")
+		fmt.Print("No actionable notifications found. ")
 		return
 	}
 
 	for _, g := range groups {
-		if brain == nil || ui == nil {
-			fmt.Println("    ⚠️ Brain or UI not ready, skipping.")
-			continue
-		}
+		if brain == nil || ui == nil { continue }
 		if count >= 12 { break }
 
 		combinedComments := strings.Join(g.Contents, "\n")
 		
 		for {
 			replyContent, err := brain.GenerateReply(ctx, g.PostTitle, combinedComments)
-			if err != nil { 
-				fmt.Printf("    ❌ Brain failed: %v\n", err)
-				break 
-			}
+			if err != nil { break }
 
 			tgTitle := fmt.Sprintf("💬 통합 답글 승인 요청 (%d개)", len(g.NotifIDs))
 			tgBody := fmt.Sprintf("📍 *게시글*: %s\n\n💬 *댓글들*:\n%s\n\n🤖 *생성된 답글*:\n%s", g.PostTitle, combinedComments, replyContent)
@@ -171,7 +152,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 			fmt.Printf("    🤖 Generated reply for '%s', waiting for Telegram approval...\n", g.PostTitle)
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err != nil {
-				fmt.Printf("    ❌ Telegram interaction failed: %v\n", err)
+				fmt.Printf("    ❌ Telegram failed: %v\n", err)
 				break
 			}
 
@@ -183,15 +164,11 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 					}
 					store.IncrementCommentCount(agent.Name(), today)
 					count++
-				} else {
-					fmt.Printf("    ❌ Reply failed: %v\n", err)
 				}
 				break
 			} else if action == ports.ActionRegenerate {
-				fmt.Println("    🔄 Regenerating...")
 				continue
 			} else {
-				fmt.Println("    ⏩ Skipped.")
 				break
 			}
 		}
@@ -210,6 +187,7 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 		elapsed := now.Sub(time.Unix(lastTs, 0))
 		if elapsed < 2*time.Hour && lastTs > 0 { return }
 
+		// Chance per cycle (10 mins)
 		if rand.Float32() > 0.4 { return }
 
 		topics := []string{"금융 및 경제 트렌드", "최신 기술 동향", "일상의 지혜와 인사이트", "자기계발 및 커리어"}
@@ -219,15 +197,12 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			currentTopic := topics[attempt % len(topics)]
 			fmt.Printf("\n📝 [Posting] Generating post about: %s\n", currentTopic)
 			postJSON, err := brain.GeneratePost(ctx, currentTopic)
-			if err != nil { 
-				fmt.Printf("    ❌ Brain failed: %v\n", err)
-				break 
-			}
+			if err != nil { break }
 
 			fmt.Println("    🚀 Waiting for Telegram approval...")
 			action, err := ui.Confirm(ctx, fmt.Sprintf("🚀 새 게시글 승인 요청 (%s)", currentTopic), postJSON)
 			if err != nil {
-				fmt.Printf("    ❌ Telegram interaction failed: %v\n", err)
+				fmt.Printf("    ❌ Telegram failed: %v\n", err)
 				break
 			}
 
@@ -235,8 +210,6 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 				if err := agent.CreatePost(ctx, domain.Post{Content: postJSON, Source: agent.Name()}); err == nil {
 					fmt.Println("    ✅ Post published!")
 					store.IncrementPostCount(agent.Name(), today, now.Unix())
-				} else {
-					fmt.Printf("    ❌ Post failed: %v\n", err)
 				}
 				break
 			} else if action == ports.ActionRegenerate {
