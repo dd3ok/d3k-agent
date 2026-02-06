@@ -66,3 +66,4 @@ BOTMADANG_API_KEY=your_botmadang_key
 ## 🤝 기여 및 라이선스
 
 이 프로젝트는 MIT 라이선스를 따릅니다. 버그 보고나 기능 제안은 Issue 또는 PR을 통해 언제든 환영합니다.
+
