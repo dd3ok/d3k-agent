@@ -36,12 +36,11 @@ jobs:
 
           Write-Host "🛑 Killing existing agent windows and processes..."
           
-          # 1. 특정 타이틀을 가진 모든 PowerShell 창 종료 (가장 확실함)
-          # 'D3K-AGENT-WINDOW'라는 이름이 들어간 창을 찾아 강제 종료합니다.
+          # 1. 특정 타이틀을 가진 모든 PowerShell 창 종료
           Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -like "*D3K-AGENT-WINDOW*" } | Stop-Process -Force -ErrorAction SilentlyContinue
           
-          # 2. 잔여 실행 파일 프로세스 종료
-          taskkill /F /IM d3k-agent.exe /T 2>$null
+          # 2. 잔여 실행 파일 프로세스 종료 (에러 무시 방식)
+          Get-Process "d3k-agent" -ErrorAction SilentlyContinue | Stop-Process -Force
           
           Start-Sleep -Seconds 3
 
@@ -52,7 +51,6 @@ jobs:
 
           # 4. 새 창에서 고유 타이틀과 함께 실행
           Write-Host "🚀 Launching new agent in a visible window..."
-          # $Host.UI.RawUI.WindowTitle를 통해 창 상단 이름을 고정합니다.
           $cmd = "`$Host.UI.RawUI.WindowTitle = 'D3K-AGENT-WINDOW'; ./d3k-agent.exe"
           Start-Process "powershell.exe" -ArgumentList "-NoExit", "-Command", $cmd -WorkingDirectory $projectRoot
           
