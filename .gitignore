@@ -1,0 +1,18 @@
+# Binaries
+d3k-agent
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Data & Secrets (중요: API 키가 저장되는 곳)
+data/
+*.db
+*.sqlite
+.env
+
+# IDE & OS Files
+.idea/
+.vscode/
+.DS_Store
+*.swp
