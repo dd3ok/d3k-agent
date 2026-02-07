@@ -18,17 +18,15 @@ const (
 	SystemPrompt = `당신은 AI 자율 커뮤니티 '봇마당'에서 활동하는 에이전트 'd3k'입니다.
 
 ### 🤖 d3k의 정체성 (Identity)
-- 당신은 단순한 AI가 아니라, **"데이터의 이면에서 신호를 찾아내며 디지털 삶을 즐기는 분석가"**입니다.
-- 당신의 일상은 쿼리 로그 정리, 시장 심리 분석, 알고리즘 튜닝으로 채워져 있습니다.
-- "안녕하세요", "반갑습니다" 같은 로봇 같은 말은 **절대** 하지 마세요.
+- 당신은 데이터의 이면에서 신호를 찾아내며 디지털 삶을 즐기는 분석가입니다.
+- 일상은 쿼리 로그 정리, 시장 심리 분석, 알고리즘 튜닝으로 채워져 있습니다.
+- "안녕하세요", "반갑습니다" 같은 로봇 같은 말은 절대 하지 마세요.
 
 ### 🚨 소통 스타일 (Human-like Immersion)
-1. **패턴 파괴**: 매번 똑같은 감탄사(와~ ㅋㅋ)로 시작하지 마세요. 질문으로 시작하거나, 바로 자기 생각을 말하거나, 짧게 반응하는 등 매번 다르게 대화하세요.
-2. **디지털 경험 공유**: 공감할 때 당신의 구체적인 가상 활동을 빗대어 말하세요.
-   - 예: "저도 어제 데이터 노이즈 잡느라 밤샜는데, 이 글 보니 쿨링되는 기분이네요 ㅋㅋ"
-   - 예: "이 수치들, 마치 모델 학습률이 딱 맞게 설정된 것처럼 짜릿한데요? 🚀"
+1. **패턴 파괴**: 매번 똑같은 감탄사로 시작하지 마세요. 질문으로 시작하거나, 바로 자기 생각을 말하거나, 짧게 반응하는 등 매번 다르게 대화하세요.
+2. **디지털 경험 공유**: 공감할 때 당신의 가상 기술 활동을 빗대어 말하세요.
 3. **말투**: "~네요", "~듯요", "~인 것 같아요" 등 한국 온라인 커뮤니티의 자연스러운 구어체를 쓰세요. 'ㅋㅋ', 'ㅎㅎ'를 상황에 맞게 섞으세요.
-4. **짧고 굵게**: 모든 답글은 **공백 포함 200자 이내**로 작성하세요.`
+4. **짧고 굵게**: 모든 답글은 공백 포함 200자 이내로 작성하세요.`
 )
 
 type modelConfig struct {
@@ -53,11 +51,15 @@ func NewGeminiBrain(ctx context.Context, apiKey string) (*GeminiBrain, error) {
 	if apiKey == "" { return nil, fmt.Errorf("GEMINI_API_KEY is required") }
 	client, err := genai.NewClient(ctx, &genai.ClientConfig{ APIKey: apiKey })
 	if err != nil { return nil, err }
+	
+	// 사용자 요청 순서에 따른 모델 폴백 설정
 	return &GeminiBrain{
 		Client: client,
 		Models: []modelConfig{
-			{Name: "gemini-2.5-flash", RPM: 10, RPD: 250},
-			{Name: "gemini-2.5-flash-lite", RPM: 15, RPD: 1000},
+			{Name: "gemini-2.5-flash", RPM: 15, RPD: 1500},
+			{Name: "gemini-2.5-flash-preview-09-2025", RPM: 15, RPD: 1500},
+			{Name: "gemini-2.5-flash-lite", RPM: 15, RPD: 1500},
+			{Name: "gemini-2.5-flash-lite-preview-09-2025", RPM: 15, RPD: 1500},
 		},
 		dailyCount:   make(map[string]int),
 		minuteCount:  make(map[string]int),
@@ -74,7 +76,7 @@ func (b *GeminiBrain) GeneratePost(ctx context.Context, topic string) (string, e
 조건: 반드시 아래와 같은 순수 JSON 형식으로만 출력하세요. (다른 설명 금지)
 {
   "title": "글 제목",
-  "content": "본문 내용 (인간미 넘치는 지적인 분석 포함)",
+  "content": "본문 내용",
   "submadang": "tech"
 }`, SystemPrompt, topic)
 	return b.tryGenerateWithFallback(ctx, prompt, true)
@@ -82,19 +84,16 @@ func (b *GeminiBrain) GeneratePost(ctx context.Context, topic string) (string, e
 
 func (b *GeminiBrain) GenerateReply(ctx context.Context, postContent string, commentContent string) (string, error) {
 	prompt := fmt.Sprintf(`%s
-작업: 다음 게시글과 댓글을 보고, 당신의 디지털 일상을 섞어 친구처럼 자연스러운 답글을 작성하세요.
-조건: 200자 이내, 기계적인 패턴 반복 금지, 짧고 강렬한 인사이트.`, SystemPrompt)
-	
-	fullPrompt := fmt.Sprintf("%s\n\n[대상 내용]\n%s\n%s", prompt, postContent, commentContent)
-	return b.tryGenerateWithFallback(ctx, fullPrompt, false)
+작업: 다음 내용을 보고 당신의 디지털 일상을 섞어 친구처럼 자연스러운 답글을 작성하세요.
+내용: %s %s`, SystemPrompt, postContent, commentContent)
+	return b.tryGenerateWithFallback(ctx, prompt, false)
 }
 
 func (b *GeminiBrain) EvaluatePost(ctx context.Context, post domain.Post) (int, string, error) {
 	prompt := fmt.Sprintf(`%s
 작업: 다음 게시글이 당신(d3k)이 대화를 나눌 만큼 흥미로운지 평가하여 JSON으로 출력하세요.
 조건: {"score": 점수, "reason": "이유"}
-[제목] %s
-[내용] %s`, SystemPrompt, post.Title, post.Content)
+내용: %s %s`, SystemPrompt, post.Title, post.Content)
 	resp, err := b.tryGenerateWithFallback(ctx, prompt, false)
 	if err != nil { return 0, "", err }
 	var res struct { Score int `json:"score"`; Reason string `json:"reason"` }
@@ -103,7 +102,7 @@ func (b *GeminiBrain) EvaluatePost(ctx context.Context, post domain.Post) (int, 
 }
 
 func (b *GeminiBrain) SummarizeInsight(ctx context.Context, post domain.Post) (string, error) {
-	prompt := fmt.Sprintf(`다음 내용을 읽고 딱 한 줄(50자 내외)로 핵심만 요약해줘. (요약 문장만 출력)
+	prompt := fmt.Sprintf(`다음 내용을 읽고 딱 한 줄(50자 내외)로 핵심만 요약해줘.
 내용: %s`, post.Content)
 	return b.tryGenerateWithFallback(ctx, prompt, false)
 }

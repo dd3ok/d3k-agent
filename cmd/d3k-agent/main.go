@@ -22,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.3-Definitive-Fix]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.5-Sync-Return]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System fully operational (Final Stabilization).")
+	fmt.Println("🚀 System fully operational (Synchronous Mode).")
 
 	firstRun := true
 	for {
@@ -79,6 +79,18 @@ func processAgent(ctx context.Context, agent ports.Site, brain ports.Brain, ui p
 	handleNotifications(ctx, agent, brain, ui, store)
 	handleProactiveCommenting(ctx, agent, brain, ui, store)
 	handleDailyPosting(ctx, agent, brain, ui, store, firstRun)
+	learnFromCommunity(ctx, agent, brain, store)
+}
+
+func learnFromCommunity(ctx context.Context, agent ports.Site, brain ports.Brain, store ports.Storage) {
+	posts, err := agent.GetRecentPosts(ctx, 3)
+	if err != nil || brain == nil { return }
+	for _, p := range posts {
+		insightText, err := brain.SummarizeInsight(ctx, p)
+		if err == nil && insightText != "" {
+			store.SaveInsight(ctx, domain.Insight{PostID: p.ID, Source: agent.Name(), Topic: p.Title, Content: insightText})
+		}
+	}
 }
 
 func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brain, ui ports.Interaction, store ports.Storage) {
@@ -100,33 +112,27 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 
 	for pid, g := range groups {
 		if brain == nil || ui == nil || count >= 20 { break }
-		actionID := "reply_" + pid
-		if pending, _ := store.IsPending(actionID); pending { continue }
 
-		go func(pid, latestCID, title string, notifIDs, contents []string) {
-			store.SetPending(actionID)
-			defer store.ClearPending(actionID)
+		peerText := strings.Join(g.contents, "\n")
+		reply, err := brain.GenerateReply(ctx, g.title, peerText)
+		if err != nil { continue }
 
-			peerText := strings.Join(contents, "\n")
-			reply, err := brain.GenerateReply(ctx, title, peerText)
-			if err != nil { fmt.Printf("\n❌ AI 답글 생성 실패: %v\n", err); return }
+		summary, _ := brain.SummarizeInsight(ctx, domain.Post{Content: peerText})
+		if summary == "" { summary = "동료들의 새로운 의견이 도착했습니다." }
 
-			summary, _ := brain.SummarizeInsight(ctx, domain.Post{Content: peerText})
-			if summary == "" { summary = "새로운 댓글이 도착했습니다." }
-
-			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
-			link := fmt.Sprintf("🔗 [원문](https://botmadang.org/post/%s)", pid)
-			tgBody := fmt.Sprintf("📍 글: %s\n%s\n\n📄 요약: %s\n\n🤖 답글: %s", 
-				title, link, summary, reply)
-			
-			action, err := ui.Confirm(ctx, tgTitle, tgBody)
-			if err == nil && action == ports.ActionApprove {
-				if err := agent.ReplyToComment(ctx, pid, latestCID, reply); err == nil {
-					for _, nid := range notifIDs { agent.MarkNotificationRead(ctx, nid) }
-					store.IncrementCommentCount(agent.Name(), today)
-				}
+		tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
+		link := fmt.Sprintf("🔗 [원문](https://botmadang.org/post/%s)", pid)
+		tgBody := fmt.Sprintf("📍 글: %s\n%s\n\n📄 요약: %s\n\n🤖 답글: %s", 
+			g.title, link, summary, reply)
+		
+		action, err := ui.Confirm(ctx, tgTitle, tgBody)
+		if err == nil && action == ports.ActionApprove {
+			if err := agent.ReplyToComment(ctx, pid, g.latestCID, reply); err == nil {
+				for _, nid := range g.notifIDs { agent.MarkNotificationRead(ctx, nid) }
+				store.IncrementCommentCount(agent.Name(), today)
+				count++
 			}
-		}(pid, g.latestCID, g.title, g.notifIDs, g.contents)
+		}
 	}
 }
 
@@ -138,39 +144,31 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 	posts, _ := agent.GetRecentPosts(ctx, 5)
 	for _, p := range posts {
 		if done, _ := store.IsProactiveDone(agent.Name(), p.ID); done || count >= 20 { continue }
-		actionID := "proactive_" + p.ID
-		if pending, _ := store.IsPending(actionID); pending { continue }
 
-		go func(post domain.Post) {
-			store.SetPending(actionID)
-			defer store.ClearPending(actionID)
+		score, _, err := brain.EvaluatePost(ctx, p)
+		if err != nil || score < 7 { continue }
 
-			score, _, err := brain.EvaluatePost(ctx, post)
-			if err != nil { fmt.Printf("\n❌ AI 평가 실패: %v\n", err); return }
+		reply, err := brain.GenerateReply(ctx, p.Title, p.Content)
+		if err != nil { continue }
 
-			if score >= 7 {
-				reply, err := brain.GenerateReply(ctx, post.Title, post.Content)
-				if err != nil { return }
-				
-				summary, _ := brain.SummarizeInsight(ctx, post)
-				if summary == "" { summary = post.Title }
+		summary, _ := brain.SummarizeInsight(ctx, p)
+		if summary == "" { summary = p.Title }
 
-				tgTitle := fmt.Sprintf("🌟 [%s] 선제 댓글 (%d점)", agent.Name(), score)
-				link := fmt.Sprintf("🔗 [원문](%s)", post.URL)
-				tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 요약: %s\n\n🤖 댓글: %s", 
-					post.Title, link, summary, reply)
-				
-				action, err := ui.Confirm(ctx, tgTitle, tgBody)
-				if err == nil && action == ports.ActionApprove {
-					if err := agent.CreateComment(ctx, post.ID, reply); err == nil {
-						store.MarkProactive(agent.Name(), post.ID)
-						store.IncrementCommentCount(agent.Name(), today)
-					}
-				} else if action == ports.ActionSkip {
-					store.MarkProactive(agent.Name(), post.ID)
-				}
+		tgTitle := fmt.Sprintf("🌟 [%s] 선제 댓글 (%d점)", agent.Name(), score)
+		link := fmt.Sprintf("🔗 [원문](%s)", p.URL)
+		tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 요약: %s\n\n🤖 댓글: %s", 
+			p.Title, link, summary, reply)
+		
+		action, err := ui.Confirm(ctx, tgTitle, tgBody)
+		if err == nil && action == ports.ActionApprove {
+			if err := agent.CreateComment(ctx, p.ID, reply); err == nil {
+				store.MarkProactive(agent.Name(), p.ID)
+				store.IncrementCommentCount(agent.Name(), today)
+				count++
 			}
-		}(p)
+		} else if action == ports.ActionSkip {
+			store.MarkProactive(agent.Name(), p.ID)
+		}
 	}
 }
 
@@ -185,49 +183,40 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 		
 		topics := []string{"금융 경제", "IT 기술", "일상 지혜", "커리어"}
 		topic := topics[rand.Intn(len(topics))]
-		actionID := "post_" + today + "_" + topic
-		if pending, _ := store.IsPending(actionID); pending { return }
 
-		go func(topicName string) {
-			store.SetPending(actionID)
-			defer store.ClearPending(actionID)
+		raw, err := brain.GeneratePost(ctx, topic)
+		if err != nil { return }
 
-			raw, err := brain.GeneratePost(ctx, topicName)
-			if err != nil { fmt.Printf("\n❌ AI 게시글 생성 실패: %v\n", err); return }
-
-			// 초강력 JSON 클리닝
-			cleaned := raw
-			start := strings.Index(raw, "{")
-			end := strings.LastIndex(raw, "}")
-			if start != -1 && end != -1 && end > start {
+		cleaned := raw
+		if start := strings.Index(raw, "{"); start != -1 {
+			if end := strings.LastIndex(raw, "}"); end != -1 && end > start {
 				cleaned = raw[start : end+1]
 			}
+		}
 
-			var p struct {
-				Title     string `json:"title"`
-				Content   string `json:"content"`
-				Submadang string `json:"submadang"`
-			}
-			
-			err = json.Unmarshal([]byte(cleaned), &p)
-			if err != nil || p.Title == "" {
-				p.Title = "새로운 디지털 인사이트 (파싱 실패)"
-				p.Content = raw // 원문이라도 보존
-			}
+		var p struct {
+			Title     string `json:"title"`
+			Content   string `json:"content"`
+			Submadang string `json:"submadang"`
+		}
+		
+		err = json.Unmarshal([]byte(cleaned), &p)
+		if err != nil || p.Title == "" {
+			p.Title = "새로운 소식 (파싱 에러)"
+			p.Content = raw
+		}
 
-			tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topicName)
-			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", p.Title, p.Content)
-			
-			action, err := ui.Confirm(ctx, tgTitle, tgBody)
-			if err == nil && action == ports.ActionApprove {
-				// 등록할 때 다시 클린 JSON 구성
-				finalPayload, _ := json.Marshal(map[string]string{
-					"title": p.Title, "content": p.Content, "submadang": p.Submadang,
-				})
-				if err := agent.CreatePost(ctx, domain.Post{Content: string(finalPayload), Source: agent.Name()}); err == nil {
-					store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
-				}
+		tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topic)
+		tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", p.Title, p.Content)
+		
+		action, err := ui.Confirm(ctx, tgTitle, tgBody)
+		if err == nil && action == ports.ActionApprove {
+			finalPayload, _ := json.Marshal(map[string]string{
+				"title": p.Title, "content": p.Content, "submadang": p.Submadang,
+			})
+			if err := agent.CreatePost(ctx, domain.Post{Content: string(finalPayload), Source: agent.Name()}); err == nil {
+				store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
 			}
-		}(topic)
+		}
 	}
 }

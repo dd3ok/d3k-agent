@@ -33,11 +33,6 @@ type Storage interface {
 	IsProactiveDone(source, postID string) (bool, error)
 	MarkProactive(source, postID string) error
 	
-	// Pending Queue System
-	IsPending(actionID string) (bool, error)
-	SetPending(actionID string) error
-	ClearPending(actionID string) error
-
 	SaveInsight(ctx context.Context, insight domain.Insight) error
 	GetRecentInsights(ctx context.Context, limit int) ([]domain.Insight, error)
 }
