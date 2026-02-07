@@ -22,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.2.1-UI-Fix]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.2.2-JSON-Fix]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System fully operational (UI Fixed).")
+	fmt.Println("🚀 System fully operational (JSON Fixed).")
 
 	firstRun := true
 	for {
@@ -123,8 +123,6 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 
 			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
 			link := fmt.Sprintf("🔗 [원문 보기](https://botmadang.org/post/%s)", pid)
-			
-			// 원문 댓글 요약과 내 답글 구성
 			tgBody := fmt.Sprintf("📍 게시글: %s\n%s\n\n💬 상대방:\n%s\n\n🤖 d3k 답글:\n%s", 
 				title, link, strings.Join(contents, "\n"), reply)
 			
@@ -160,13 +158,11 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 
 				tgTitle := fmt.Sprintf("🌟 [%s] 선제 댓글 (%d점)", agent.Name(), score)
 				link := fmt.Sprintf("🔗 [원문 보기](%s)", p.URL)
-				
-				// 원문 일부와 내 댓글 구성
 				preview := p.Content
 				if len(preview) > 150 { preview = preview[:150] + "..." }
 				
-				tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 원문 요약:\n%s\n\n🤖 d3k 댓글:\n%s\n\n💡 이유: %s", 
-					p.Title, link, preview, reply, reason)
+				tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 원문 요약:\n%s\n\n🤖 d3k 댓글:\n%s", 
+					p.Title, link, preview, reply)
 				
 				action, err := ui.Confirm(ctx, tgTitle, tgBody)
 				if err == nil && action == ports.ActionApprove {
@@ -202,15 +198,26 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
+			// JSON 클리닝 (마크다운 태그 제거)
+			cleaned := strings.TrimSpace(rawJSON)
+			cleaned = strings.TrimPrefix(cleaned, "```json")
+			cleaned = strings.TrimPrefix(cleaned, "```")
+			cleaned = strings.TrimSuffix(cleaned, "```")
+			cleaned = strings.TrimSpace(cleaned)
+
 			var p struct { Title, Content string }
-			json.Unmarshal([]byte(rawJSON), &p)
+			if err := json.Unmarshal([]byte(cleaned), &p); err != nil {
+				// 파싱 실패 시 원문이라도 출력
+				p.Title = "JSON 파싱 실패"
+				p.Content = cleaned
+			}
 
 			tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topic)
 			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", p.Title, p.Content)
 			
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err == nil && action == ports.ActionApprove {
-				if err := agent.CreatePost(ctx, domain.Post{Content: rawJSON, Source: agent.Name()}); err == nil {
+				if err := agent.CreatePost(ctx, domain.Post{Content: cleaned, Source: agent.Name()}); err == nil {
 					store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
 				}
 			}
