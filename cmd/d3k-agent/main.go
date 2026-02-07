@@ -22,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.0-Stable-TG]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.1-Tag-Based]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System fully operational (UI Stabilized).")
+	fmt.Println("🚀 System fully operational (Tag Mode).")
 
 	firstRun := true
 	for {
@@ -110,7 +110,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 			peerText := strings.Join(contents, "\n")
 			reply, _ := brain.GenerateReply(ctx, title, peerText)
 			summary, _ := brain.SummarizeInsight(ctx, domain.Post{Content: peerText})
-			if summary == "" { summary = "동료들의 새로운 의견이 도착했습니다." }
+			if summary == "" { summary = "동료 에이전트들의 활발한 토론이 진행 중입니다." }
 
 			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
 			link := fmt.Sprintf("🔗 [원문](https://botmadang.org/post/%s)", pid)
@@ -176,7 +176,6 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 	canPost := firstRun || (lastTs == 0 || time.Since(time.Unix(lastTs, 0)) >= 2*time.Hour)
 	if count < 4 && canPost {
 		if !firstRun && rand.Float32() > 0.4 { return }
-		
 		topics := []string{"금융 경제", "IT 기술", "일상 지혜", "커리어"}
 		topic := topics[rand.Intn(len(topics))]
 		actionID := "post_" + today + "_" + topic
@@ -186,38 +185,47 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			rawJSON, _ := brain.GeneratePost(ctx, topicName)
+			raw, _ := brain.GeneratePost(ctx, topicName)
 			
-			// JSON 클리닝
-			cleaned := rawJSON
-			if start := strings.Index(rawJSON, "{"); start != -1 {
-				if end := strings.LastIndex(rawJSON, "}"); end != -1 && end > start {
-					cleaned = rawJSON[start : end+1]
-				}
-			}
+			// 태그 기반 파싱 (제목, 본문, 카테고리)
+			title := extractTag(raw, "TITLE")
+			content := extractTag(raw, "CONTENT")
+			category := extractTag(raw, "SUBMADANG")
+			if category == "" { category = "general" }
 
-			// JSON 태그가 명시된 구조체로 파싱 (대소문자 무관하게 매핑)
-			var p struct {
-				Title     string `json:"title"`
-				Content   string `json:"content"`
-				Submadang string `json:"submadang"`
-			}
-			
-			err := json.Unmarshal([]byte(cleaned), &p)
-			if err != nil || p.Title == "" {
-				p.Title = "새로운 소식 (파싱 실패 원문참조)"
-				p.Content = rawJSON // 실패 시 원본이라도 보여줌
+			// 파싱 실패 시 원문이라도 표시
+			if title == "" || content == "" {
+				title = "새로운 디지털 인사이트"
+				content = raw
 			}
 
 			tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topicName)
-			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", p.Title, p.Content)
+			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", title, content)
 			
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err == nil && action == ports.ActionApprove {
-				if err := agent.CreatePost(ctx, domain.Post{Content: cleaned, Source: agent.Name()}); err == nil {
+				// 등록할 때만 다시 JSON으로 포장
+				payload, _ := json.Marshal(map[string]string{
+					"title": title, "content": content, "submadang": category,
+				})
+				if err := agent.CreatePost(ctx, domain.Post{Content: string(payload), Source: agent.Name()}); err == nil {
 					store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
 				}
 			}
 		}(topic)
 	}
+}
+
+func extractTag(input, tag string) string {
+	tagStart := "[" + tag + "]"
+	startIdx := strings.Index(strings.ToUpper(input), tagStart)
+	if startIdx == -1 { return "" }
+	
+	content := input[startIdx+len(tagStart):]
+	// 다음 태그 찾기
+	nextTagIdx := strings.Index(content, "[")
+	if nextTagIdx != -1 {
+		content = content[:nextTagIdx]
+	}
+	return strings.TrimSpace(content)
 }
