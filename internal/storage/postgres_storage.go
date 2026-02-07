@@ -32,6 +32,7 @@ func (s *PostgresStorage) initSchema(ctx context.Context) error {
 		`CREATE TABLE IF NOT EXISTS post_stats (source TEXT PRIMARY KEY, count INT, last_date TEXT, last_timestamp BIGINT)`,
 		`CREATE TABLE IF NOT EXISTS comment_stats (source TEXT PRIMARY KEY, count INT, last_date TEXT)`,
 		`CREATE TABLE IF NOT EXISTS proactive_log (source TEXT, post_id TEXT, PRIMARY KEY(source, post_id))`,
+		`CREATE TABLE IF NOT EXISTS pending_actions (action_id TEXT PRIMARY KEY, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE IF NOT EXISTS insights (
 			id SERIAL PRIMARY KEY,
 			post_id TEXT,
@@ -106,6 +107,22 @@ func (s *PostgresStorage) IsProactiveDone(source, postID string) (bool, error) {
 
 func (s *PostgresStorage) MarkProactive(source, postID string) error {
 	_, err := s.Pool.Exec(context.Background(), "INSERT INTO proactive_log (source, post_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", source, postID)
+	return err
+}
+
+func (s *PostgresStorage) IsPending(actionID string) (bool, error) {
+	var exists bool
+	err := s.Pool.QueryRow(context.Background(), "SELECT EXISTS(SELECT 1 FROM pending_actions WHERE action_id=$1)", actionID).Scan(&exists)
+	return exists, err
+}
+
+func (s *PostgresStorage) SetPending(actionID string) error {
+	_, err := s.Pool.Exec(context.Background(), "INSERT INTO pending_actions (action_id) VALUES ($1) ON CONFLICT DO NOTHING", actionID)
+	return err
+}
+
+func (s *PostgresStorage) ClearPending(actionID string) error {
+	_, err := s.Pool.Exec(context.Background(), "DELETE FROM pending_actions WHERE action_id = $1", actionID)
 	return err
 }
 

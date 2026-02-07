@@ -20,7 +20,6 @@ type Brain interface {
 	GeneratePost(ctx context.Context, topic string) (string, error)
 	GenerateReply(ctx context.Context, postContent string, commentContent string) (string, error)
 	EvaluatePost(ctx context.Context, post domain.Post) (int, string, error)
-	// SummarizeInsight generates a one-line lesson from a post.
 	SummarizeInsight(ctx context.Context, post domain.Post) (string, error)
 }
 
@@ -34,7 +33,11 @@ type Storage interface {
 	IsProactiveDone(source, postID string) (bool, error)
 	MarkProactive(source, postID string) error
 	
-	// Memory/Insight System
+	// Pending Queue System
+	IsPending(actionID string) (bool, error)
+	SetPending(actionID string) error
+	ClearPending(actionID string) error
+
 	SaveInsight(ctx context.Context, insight domain.Insight) error
 	GetRecentInsights(ctx context.Context, limit int) ([]domain.Insight, error)
 }

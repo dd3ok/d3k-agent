@@ -126,6 +126,9 @@ func (s *JSONStorage) MarkProactive(source, postID string) error {
 	return s.saveToFile()
 }
 
-// Memory System Stubs for JSON (To satisfy interface)
-func (s *JSONStorage) SaveInsight(ctx context.Context, insight domain.Insight) error { return nil }
+// Memory & Queue Stubs for JSON
+func (s *JSONStorage) IsPending(id string) (bool, error) { return false, nil }
+func (s *JSONStorage) SetPending(id string) error { return nil }
+func (s *JSONStorage) ClearPending(id string) error { return nil }
+func (s *JSONStorage) SaveInsight(ctx context.Context, i domain.Insight) error { return nil }
 func (s *JSONStorage) GetRecentInsights(ctx context.Context, limit int) ([]domain.Insight, error) { return nil, nil }
