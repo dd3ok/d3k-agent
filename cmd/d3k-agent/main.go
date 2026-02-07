@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
 	"os"
@@ -21,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.2.0-AsyncQueue]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.2.1-UI-Fix]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -54,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System fully operational (Async Queue Mode).")
+	fmt.Println("🚀 System fully operational (UI Fixed).")
 
 	firstRun := true
 	for {
@@ -111,21 +112,21 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 
 	for pid, g := range groups {
 		if brain == nil || ui == nil || count >= 20 { break }
-		
-		// 큐 방식: 이미 펜딩 중이면 스킵
 		actionID := "reply_" + pid
 		if pending, _ := store.IsPending(actionID); pending { continue }
 
 		reply, _ := brain.GenerateReply(ctx, g.title, strings.Join(g.contents, "\n"))
 		
-		// 비동기 실행을 위해 고루틴 실행
-		go func(pid, latestCID, title, reply string, notifIDs []string) {
+		go func(pid, latestCID, title, reply string, notifIDs []string, contents []string) {
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			tgTitle := fmt.Sprintf("💬 [%s] 통합 답글 승인", agent.Name())
+			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
 			link := fmt.Sprintf("🔗 [원문 보기](https://botmadang.org/post/%s)", pid)
-			tgBody := fmt.Sprintf("📍 게시글: %s\n%s\n\n🤖 답글: %s", title, link, reply)
+			
+			// 원문 댓글 요약과 내 답글 구성
+			tgBody := fmt.Sprintf("📍 게시글: %s\n%s\n\n💬 상대방:\n%s\n\n🤖 d3k 답글:\n%s", 
+				title, link, strings.Join(contents, "\n"), reply)
 			
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err == nil && action == ports.ActionApprove {
@@ -134,7 +135,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 					store.IncrementCommentCount(agent.Name(), today)
 				}
 			}
-		}(pid, g.latestCID, g.title, reply, g.notifIDs)
+		}(pid, g.latestCID, g.title, reply, g.notifIDs, g.contents)
 	}
 }
 
@@ -146,8 +147,6 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 	posts, _ := agent.GetRecentPosts(ctx, 5)
 	for _, p := range posts {
 		if done, _ := store.IsProactiveDone(agent.Name(), p.ID); done || count >= 20 { continue }
-		
-		// 큐 방식: 이미 펜딩 중이면 스킵
 		actionID := "proactive_" + p.ID
 		if pending, _ := store.IsPending(actionID); pending { continue }
 
@@ -161,7 +160,13 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 
 				tgTitle := fmt.Sprintf("🌟 [%s] 선제 댓글 (%d점)", agent.Name(), score)
 				link := fmt.Sprintf("🔗 [원문 보기](%s)", p.URL)
-				tgBody := fmt.Sprintf("📝 이유: %s\n%s\n\n🤖 댓글: %s", reason, link, reply)
+				
+				// 원문 일부와 내 댓글 구성
+				preview := p.Content
+				if len(preview) > 150 { preview = preview[:150] + "..." }
+				
+				tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 원문 요약:\n%s\n\n🤖 d3k 댓글:\n%s\n\n💡 이유: %s", 
+					p.Title, link, preview, reply, reason)
 				
 				action, err := ui.Confirm(ctx, tgTitle, tgBody)
 				if err == nil && action == ports.ActionApprove {
@@ -186,7 +191,6 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 	if count < 4 && canPost {
 		if !firstRun && rand.Float32() > 0.4 { return }
 		
-		// 게시글은 고유 ID가 없으므로 토픽별로 펜딩 관리
 		topics := []string{"금융 경제", "IT 기술", "일상 지혜", "커리어"}
 		topic := topics[rand.Intn(len(topics))]
 		actionID := "post_" + today + "_" + topic
@@ -194,13 +198,19 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 
 		postJSON, _ := brain.GeneratePost(ctx, topic)
 		
-		go func(topic, postJSON string) {
+		go func(topic, rawJSON string) {
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			action, err := ui.Confirm(ctx, "🚀 ["+agent.Name()+"] 새 글 승인", postJSON)
+			var p struct { Title, Content string }
+			json.Unmarshal([]byte(rawJSON), &p)
+
+			tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topic)
+			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", p.Title, p.Content)
+			
+			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err == nil && action == ports.ActionApprove {
-				if err := agent.CreatePost(ctx, domain.Post{Content: postJSON, Source: agent.Name()}); err == nil {
+				if err := agent.CreatePost(ctx, domain.Post{Content: rawJSON, Source: agent.Name()}); err == nil {
 					store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
 				}
 			}
