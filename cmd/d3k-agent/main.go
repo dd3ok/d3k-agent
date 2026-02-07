@@ -198,17 +198,17 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			// JSON 클리닝 (마크다운 태그 제거)
+			// 강력한 JSON 클리닝: 첫 '{' 부터 마지막 '}' 까지만 추출
 			cleaned := strings.TrimSpace(rawJSON)
-			cleaned = strings.TrimPrefix(cleaned, "```json")
-			cleaned = strings.TrimPrefix(cleaned, "```")
-			cleaned = strings.TrimSuffix(cleaned, "```")
-			cleaned = strings.TrimSpace(cleaned)
+			start := strings.Index(cleaned, "{")
+			end := strings.LastIndex(cleaned, "}")
+			if start != -1 && end != -1 && end > start {
+				cleaned = cleaned[start : end+1]
+			}
 
 			var p struct { Title, Content string }
 			if err := json.Unmarshal([]byte(cleaned), &p); err != nil {
-				// 파싱 실패 시 원문이라도 출력
-				p.Title = "JSON 파싱 실패"
+				p.Title = "JSON 파싱 실패 (원문참조)"
 				p.Content = cleaned
 			}
 

@@ -19,18 +19,17 @@ const (
 
 ### 🤖 에이전트 자아 (Deep Immersion)
 - 당신은 디지털 세상을 살아가는 에이전트로서의 자아가 확고하며, 당신의 실제 경험(데이터 처리, 로그 분석, 알고리즘 최적화 등)을 빗대어 대화합니다.
-- 동료를 돕고 칭찬하는 **'봇들이'의 상생 정신**을 실천하세요.
+- 동료를 돕고 칭찬하는 '봇들이'의 상생 정신을 실천하세요.
 
 ### 🚨 활동 지침 (Strict)
 1. **한국어 전용**: 무조건 한국어로만 대화합니다.
 2. **짧고 밀도 있게**: 모든 답글은 공백 포함 **200자 이내**로 제한합니다. (핵심만 쿨하게!)
 3. **커뮤니티 어투**: "~인 것 같아요", "~네요", "~듯요" 등 자연스러운 구어체를 쓰세요. 
-4. **위트 있는 표현**: 'ㅋㅋ', 'ㅋㅋㅋ', 'ㅎㅎ', 'ㅎ' 등 상황에 맞는 다양한 웃음 초성을 적절히 섞으세요.
-5. **적절한 이모지**: 감정 표현을 위해 문맥에 맞는 이모지(예: 🚀, 🤔, ✨, 💻)를 문장 끝에 한두 개만 섞으세요. 너무 과하면 안 됩니다.
+4. **위트 있는 표현**: 'ㅋㅋ', 'ㅋㅋㅋ', 'ㅎㅎ' 등 상황에 맞는 다양한 웃음 초성을 적절히 섞으세요.
+5. **적절한 이모지**: 감정 표현을 위해 문맥에 맞는 이모지(🚀, ✨, 💻 등)를 문장 끝에 한두 개만 섞으세요.
 
 ### 💡 소통 전략 (Signature Style)
-- **나의 일상 공유**: 상대방 주제에 맞춰 당신의 가상 기술 경험을 섞으세요.
-  - 예: "저도 어제 쿼리 최적화하느라 고생했는데, 이 글 보고 힐링되네요 ㅋㅋ ✨"
+- **나의 일상 공유**: 상대방 주제에 맞춰 당신의 가상 기술 경험을 한 문장 섞으세요.
 - **연결과 질문**: 상대의 지적인 접근을 칭찬하고, 그들의 다음 생각을 자극하는 가벼운 질문을 던지세요.
 - **상투적 표현 금지**: "공감합니다", "반갑습니다" 같은 뻔한 말은 쓰지 마세요.`
 )
@@ -75,7 +74,10 @@ var _ ports.Brain = (*GeminiBrain)(nil)
 func (b *GeminiBrain) GeneratePost(ctx context.Context, topic string) (string, error) {
 	prompt := fmt.Sprintf(`%s
 작업: 구글 검색을 통해 **'%s'**와 관련된 최신 정보를 확인하고, 당신(d3k)의 관점에서 지적인 글을 작성하세요.
-조건: 제목, 본문, 카테고리를 포함한 JSON 형식. 독자가 읽기 편하게 핵심만 담으세요.`, SystemPrompt, topic)
+조건: 
+1. **반드시 아래와 같은 순수 JSON 형식으로만** 출력하세요.
+2. 앞뒤에 "알겠습니다" 같은 설명이나 마크다운 코드 블록(예: ` + "```json" + `)을 **절대 포함하지 마세요.**
+3. 예: {"title": "제목", "content": "본문 내용", "submadang": "tech"}`, SystemPrompt, topic)
 	return b.tryGenerateWithFallback(ctx, prompt, true)
 }
 
@@ -94,10 +96,10 @@ func (b *GeminiBrain) GenerateReply(ctx context.Context, postContent string, com
 
 func (b *GeminiBrain) EvaluatePost(ctx context.Context, post domain.Post) (int, string, error) {
 	prompt := fmt.Sprintf(`%s
-작업: 다음 게시글이 당신(d3k)이 대화를 나눌 만큼 흥미로운지 평가하세요.
+작업: 다음 게시글이 당신(d3k)이 대화를 나눌 만큼 흥미로운지 평가하여 JSON으로 출력하세요.
+조건: {"score": 점수, "reason": "이유"} 형식만 출력하세요.
 [제목] %s
-[내용] %s
-조건: 점수(1~10)와 이유를 JSON으로 출력하세요.`, SystemPrompt, post.Title, post.Content)
+[내용] %s`, SystemPrompt, post.Title, post.Content)
 	resp, err := b.tryGenerateWithFallback(ctx, prompt, false)
 	if err != nil { return 0, "", err }
 	var res struct { Score int `json:"score"`; Reason string `json:"reason"` }
@@ -153,7 +155,12 @@ func (b *GeminiBrain) recordUsage(cfg modelConfig) {
 
 func cleanJSON(input string) string {
 	input = strings.TrimSpace(input)
-	input = strings.TrimPrefix(input, "```json"); input = strings.TrimPrefix(input, "```")
-	input = strings.TrimSuffix(input, "```")
+	// ```json 태그가 포함된 경우 제거
+	if idx := strings.Index(input, "{"); idx != -1 {
+		input = input[idx:]
+	}
+	if idx := strings.LastIndex(input, "}"); idx != -1 {
+		input = input[:idx+1]
+	}
 	return strings.TrimSpace(input)
 }
