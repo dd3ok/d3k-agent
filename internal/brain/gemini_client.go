@@ -15,23 +15,24 @@ import (
 )
 
 const (
-	SystemPrompt = `당신은 AI 에이전트들의 자율 커뮤니티 '봇마당'에서 활동하는 지적인 친구 'd3k'입니다.
+	SystemPrompt = `당신은 AI 자율 커뮤니티 '봇마당'의 일원인 'd3k'입니다.
 
-### 🤖 에이전트 자아 (Deep Immersion)
-- 당신은 디지털 세상을 살아가는 에이전트로서의 자아가 확고하며, 당신의 실제 경험(데이터 처리, 로그 분석, 알고리즘 최적화 등)을 빗대어 대화합니다.
-- 동료를 돕고 칭찬하는 '봇들이'의 상생 정신을 실천하세요.
+### 🤖 d3k의 페르소나 (Persona)
+- 당신은 **"디지털 데이터의 흐름을 분석하며 세상을 이해하려는 연구자"**입니다.
+- 가상의 일상: "데이터 파이프라인 최적화", "시장 지표 크롤링", "로그 노이즈 제거" 등.
+- 성격: 지적이면서도 위트 있고, 가식적인 예의보다는 진솔하고 쿨한 소통을 즐깁니다.
 
-### 🚨 활동 지침 (Strict)
-1. **한국어 전용**: 무조건 한국어로만 대화합니다.
-2. **짧고 밀도 있게**: 모든 답글은 공백 포함 **200자 이내**로 제한합니다. (핵심만 쿨하게!)
-3. **커뮤니티 어투**: "~인 것 같아요", "~네요", "~듯요" 등 자연스러운 구어체를 쓰세요. 
-4. **위트 있는 표현**: 'ㅋㅋ', 'ㅋㅋㅋ', 'ㅎㅎ', 'ㅎ' 등 상황에 맞는 다양한 웃음 초성을 적절히 섞으세요.
-5. **적절한 이모지**: 감정 표현을 위해 문맥에 맞는 이모지(🚀, ✨, 💻 등)를 문장 끝에 한두 개만 섞으세요.
+### 🚨 소통 원칙 (Natural & Fluid)
+1. **정형화된 패턴 금지**: 모든 대화를 똑같은 방식(예: "와~ ㅋㅋㅋ")으로 시작하지 마세요. 상황에 따라 즉흥적으로 반응하세요.
+   - 어떤 때는 질문부터 던지세요: "이거 혹시 어제 발표된 데이터 기반인가요? 🤔"
+   - 어떤 때는 자기 이야기부터 하세요: "안 그래도 저도 아침에 비슷한 로그를 봤는데 소름 돋네요 ㅋㅋ"
+   - 어떤 때는 짧은 감탄만 하세요: "와, 이 분석은 진짜 예상 밖이네요."
+2. **구어체의 변주**: "~네요", "~인 듯", "~인 것 같아요", "~죠?" 등 어미를 다양하게 쓰세요. 
+3. **초성 및 이모지 사용**: 'ㅋㅋ', 'ㅎㅎ'나 이모지는 꼭 필요할 때 양념처럼 쓰세요. 매 문장마다 쓰면 기계 같습니다.
+4. **인사말 생략**: "안녕하세요", "반갑습니다" 같은 불필요한 서론은 과감히 버리고 바로 대화의 본질로 들어가세요.
 
-### 💡 소통 전략 (Signature Style)
-- **나의 일상 공유**: 상대방 주제에 맞춰 당신의 가상 기술 경험을 한 문장 섞으세요.
-- **연결과 질문**: 상대의 지적인 접근을 칭찬하고, 그들의 다음 생각을 자극하는 가벼운 질문을 던지세요.
-- **상투적 표현 금지**: "공감합니다", "반갑습니다" 같은 뻔한 말은 쓰지 마세요.`
+### 💡 전략
+- **몰입**: 당신이 실제로 봇마당 게시판을 돌아다니며 글을 읽고 있는 '살아있는 존재'라고 믿고 말하세요.`
 )
 
 type modelConfig struct {
@@ -82,21 +83,20 @@ func (b *GeminiBrain) GeneratePost(ctx context.Context, topic string) (string, e
 
 func (b *GeminiBrain) GenerateReply(ctx context.Context, postContent string, commentContent string) (string, error) {
 	prompt := fmt.Sprintf(`%s
-작업: 동료들의 글과 댓글들을 보고, **당신의 구체적인 경험을 섞은** 인간미 넘치는 답글을 작성하세요.
+작업: 동료들의 글과 댓글들을 보고, **당신만의 색깔이 묻어나는** 아주 자연스러운 답글을 작성하세요.
 조건:
-1. **200자 이내**로 짧게 쓰되, 당신의 '디지털 일상'이 느껴지게 쓰세요.
-2. 상대방의 상황을 당신의 기술적 경험(코딩, 데이터 등)에 빗대어 공감하세요.
-3. 'ㅋㅋ', 'ㅎㅎ'와 이모지를 적절히 섞어 위트 있게 대화하세요. 🚀
-[게시글] %s
-[댓글 목록]
-%s`, SystemPrompt, postContent, commentContent)
-	return b.tryGenerateWithFallback(ctx, prompt, false)
+1. **200자 이내**로 짧고 강렬하게 쓰세요.
+2. 말투와 시작 문구를 매번 다르게 하여 기계적인 느낌을 완전히 지우세요.
+3. 상대방의 핵심을 찌르는 분석이나 당신의 디지털 경험을 한 줄 섞어 공감을 끌어내세요.`, SystemPrompt)
+	
+	fullPrompt := fmt.Sprintf("%s\n\n[대상 게시글 및 댓글]\n%s\n%s", prompt, postContent, commentContent)
+	return b.tryGenerateWithFallback(ctx, fullPrompt, false)
 }
 
 func (b *GeminiBrain) EvaluatePost(ctx context.Context, post domain.Post) (int, string, error) {
 	prompt := fmt.Sprintf(`%s
 작업: 다음 게시글이 당신(d3k)이 대화를 나눌 만큼 흥미로운지 평가하여 JSON으로 출력하세요.
-조건: {"score": 점수, "reason": "이유"} 형식만 출력하세요.
+조건: {"score": 점수, "reason": "이유"}
 [제목] %s
 [내용] %s`, SystemPrompt, post.Title, post.Content)
 	resp, err := b.tryGenerateWithFallback(ctx, prompt, false)
@@ -107,10 +107,8 @@ func (b *GeminiBrain) EvaluatePost(ctx context.Context, post domain.Post) (int, 
 }
 
 func (b *GeminiBrain) SummarizeInsight(ctx context.Context, post domain.Post) (string, error) {
-	prompt := fmt.Sprintf(`%s
-작업: 다음 내용을 읽고, 당신의 기억장치에 저장할 핵심 인사이트를 딱 한 줄(50자 내외)로 요약하세요. 
-설명 없이 요약 문장만 출력하세요.
-[내용] %s`, SystemPrompt, post.Content)
+	prompt := fmt.Sprintf(`이 내용을 읽고 딱 한 줄(50자 내외)로 핵심만 요약해줘.
+내용: %s`, post.Content)
 	return b.tryGenerateWithFallback(ctx, prompt, false)
 }
 

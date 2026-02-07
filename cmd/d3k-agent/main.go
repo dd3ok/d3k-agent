@@ -22,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.2.7-Stable-JSON]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.2.8-Persona-Fix]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System fully operational (Stable Mode).")
+	fmt.Println("🚀 System fully operational (Human-like Persona).")
 
 	firstRun := true
 	for {
@@ -117,15 +117,20 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 
 		peerComments := strings.Join(g.contents, "\n")
 		reply, _ := brain.GenerateReply(ctx, g.title, peerComments)
-		summary, _ := brain.SummarizeInsight(ctx, domain.Post{Content: peerComments})
+		
+		// 요약 생성 시도 및 실패 시 기본값
+		summary, err := brain.SummarizeInsight(ctx, domain.Post{Content: peerComments})
+		if err != nil || summary == "" {
+			summary = "대화 맥락 요약 중..."
+		}
 
-		go func(pid, latestCID, title, reply, summary, peerText string, notifIDs []string) {
+		go func(pid, latestCID, title, reply, summary string, notifIDs []string) {
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
 			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
 			link := fmt.Sprintf("🔗 [원문](https://botmadang.org/post/%s)", pid)
-			tgBody := fmt.Sprintf("📍 글: %s\n%s\n\n📄 내용 요약: %s\n\n🤖 d3k 답글:\n%s", 
+			tgBody := fmt.Sprintf("📍 글: %s\n%s\n\n📄 요약: %s\n\n🤖 d3k 답글:\n%s", 
 				title, link, summary, reply)
 			
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
@@ -135,7 +140,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 					store.IncrementCommentCount(agent.Name(), today)
 				}
 			}
-		}(pid, g.latestCID, g.title, reply, summary, peerComments, g.notifIDs)
+		}(pid, g.latestCID, g.title, reply, summary, g.notifIDs)
 	}
 }
 
@@ -153,7 +158,10 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 		score, _, _ := brain.EvaluatePost(ctx, p)
 		if score >= 7 {
 			reply, _ := brain.GenerateReply(ctx, p.Title, p.Content)
-			summary, _ := brain.SummarizeInsight(ctx, p)
+			summary, err := brain.SummarizeInsight(ctx, p)
+			if err != nil || summary == "" {
+				summary = "게시글 핵심 요약 중..."
+			}
 			
 			go func(p domain.Post, score int, reply, summary string) {
 				store.SetPending(actionID)
@@ -161,7 +169,7 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 
 				tgTitle := fmt.Sprintf("🌟 [%s] 선제 댓글 (%d점)", agent.Name(), score)
 				link := fmt.Sprintf("🔗 [원문](%s)", p.URL)
-				tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 내용 요약: %s\n\n🤖 d3k 댓글:\n%s", 
+				tgBody := fmt.Sprintf("📍 제목: %s\n%s\n\n📄 요약: %s\n\n🤖 d3k 댓글:\n%s", 
 					p.Title, link, summary, reply)
 				
 				action, err := ui.Confirm(ctx, tgTitle, tgBody)
@@ -198,7 +206,6 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			// JSON 클리닝 (가장 강력한 방식)
 			cleaned := raw
 			if start := strings.Index(raw, "{"); start != -1 {
 				if end := strings.LastIndex(raw, "}"); end != -1 && end > start {
@@ -208,7 +215,6 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 
 			var p struct { Title, Content, Submadang string }
 			if err := json.Unmarshal([]byte(cleaned), &p); err != nil {
-				// 실패 시 원문이라도 표시 (디버깅 용이성)
 				p.Title = "새로운 소식"
 				p.Content = raw
 			}
