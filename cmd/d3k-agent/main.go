@@ -22,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.2-Fixed-UI]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.3-Definitive-Fix]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System operational (Fixed UI Data).")
+	fmt.Println("🚀 System fully operational (Final Stabilization).")
 
 	firstRun := true
 	for {
@@ -108,9 +108,11 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 			defer store.ClearPending(actionID)
 
 			peerText := strings.Join(contents, "\n")
-			reply, _ := brain.GenerateReply(ctx, title, peerText)
+			reply, err := brain.GenerateReply(ctx, title, peerText)
+			if err != nil { fmt.Printf("\n❌ AI 답글 생성 실패: %v\n", err); return }
+
 			summary, _ := brain.SummarizeInsight(ctx, domain.Post{Content: peerText})
-			if summary == "" { summary = "새로운 댓글이 달렸습니다." }
+			if summary == "" { summary = "새로운 댓글이 도착했습니다." }
 
 			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
 			link := fmt.Sprintf("🔗 [원문](https://botmadang.org/post/%s)", pid)
@@ -143,9 +145,13 @@ func handleProactiveCommenting(ctx context.Context, agent ports.Site, brain port
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			score, _, _ := brain.EvaluatePost(ctx, post)
+			score, _, err := brain.EvaluatePost(ctx, post)
+			if err != nil { fmt.Printf("\n❌ AI 평가 실패: %v\n", err); return }
+
 			if score >= 7 {
-				reply, _ := brain.GenerateReply(ctx, post.Title, post.Content)
+				reply, err := brain.GenerateReply(ctx, post.Title, post.Content)
+				if err != nil { return }
+				
 				summary, _ := brain.SummarizeInsight(ctx, post)
 				if summary == "" { summary = post.Title }
 
@@ -186,53 +192,42 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 			store.SetPending(actionID)
 			defer store.ClearPending(actionID)
 
-			raw, _ := brain.GeneratePost(ctx, topicName)
-			
-			// 텍스트에서 제목, 본문, 마당 추출
-			title := extractValue(raw, "제목:")
-			content := extractValue(raw, "본문:")
-			category := extractValue(raw, "마당:")
-			if category == "" { category = "general" }
+			raw, err := brain.GeneratePost(ctx, topicName)
+			if err != nil { fmt.Printf("\n❌ AI 게시글 생성 실패: %v\n", err); return }
 
-			// 파싱 실패 시 원문 전체라도 보존
-			if title == "" { title = "디지털 인사이트" }
-			if content == "" { content = raw }
+			// 초강력 JSON 클리닝
+			cleaned := raw
+			start := strings.Index(raw, "{")
+			end := strings.LastIndex(raw, "}")
+			if start != -1 && end != -1 && end > start {
+				cleaned = raw[start : end+1]
+			}
+
+			var p struct {
+				Title     string `json:"title"`
+				Content   string `json:"content"`
+				Submadang string `json:"submadang"`
+			}
+			
+			err = json.Unmarshal([]byte(cleaned), &p)
+			if err != nil || p.Title == "" {
+				p.Title = "새로운 디지털 인사이트 (파싱 실패)"
+				p.Content = raw // 원문이라도 보존
+			}
 
 			tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topicName)
-			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", title, content)
+			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", p.Title, p.Content)
 			
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err == nil && action == ports.ActionApprove {
-				// 등록 시에만 JSON 포장
-				payload, _ := json.Marshal(map[string]string{
-					"title": title, "content": content, "submadang": category,
+				// 등록할 때 다시 클린 JSON 구성
+				finalPayload, _ := json.Marshal(map[string]string{
+					"title": p.Title, "content": p.Content, "submadang": p.Submadang,
 				})
-				if err := agent.CreatePost(ctx, domain.Post{Content: string(payload), Source: agent.Name()}); err == nil {
+				if err := agent.CreatePost(ctx, domain.Post{Content: string(finalPayload), Source: agent.Name()}); err == nil {
 					store.IncrementPostCount(agent.Name(), today, time.Now().Unix())
 				}
 			}
 		}(topic)
 	}
-}
-
-// extractValue는 "제목: 내용" 형식에서 값을 추출합니다.
-func extractValue(input, key string) string {
-	lines := strings.Split(input, "\n")
-	for i, line := range lines {
-		if strings.HasPrefix(strings.TrimSpace(line), key) {
-			val := strings.TrimPrefix(strings.TrimSpace(line), key)
-			// 만약 다음 줄까지 내용이 이어진다면 (본문 같은 경우)
-			if key == "본문:" {
-				var contentLines []string
-				contentLines = append(contentLines, strings.TrimSpace(val))
-				for j := i + 1; j < len(lines); j++ {
-					if strings.Contains(lines[j], "마당:") { break } // 다음 키워드 만나면 중단
-					contentLines = append(contentLines, lines[j])
-				}
-				return strings.TrimSpace(strings.Join(contentLines, "\n"))
-			}
-			return strings.TrimSpace(val)
-		}
-	}
-	return ""
 }
