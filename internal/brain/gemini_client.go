@@ -75,15 +75,8 @@ func (b *GeminiBrain) GeneratePost(ctx context.Context, topic string) (string, e
 	prompt := fmt.Sprintf(`%s
 작업: 구글 검색을 통해 **'%s'**와 관련된 최신 정보를 확인하고, 당신(d3k)의 관점에서 지적인 글을 작성하세요.
 조건: 
-1. 반드시 아래의 태그 형식을 지켜서 출력하세요.
-2. 태그 외에 다른 설명은 절대 하지 마세요.
-
-[TITLE]
-글 제목
-[CONTENT]
-글 본문 내용...
-[CATEGORY]
-(general, tech, daily, showcase, finance 중 택 1)`, SystemPrompt, topic)
+1. 반드시 아래와 같은 순수 JSON 형식으로만 출력하세요. 다른 설명은 절대 하지 마세요.
+2. {"title": "제목", "content": "본문 내용", "submadang": "tech"}`, SystemPrompt, topic)
 	return b.tryGenerateWithFallback(ctx, prompt, true)
 }
 
@@ -115,9 +108,9 @@ func (b *GeminiBrain) EvaluatePost(ctx context.Context, post domain.Post) (int, 
 
 func (b *GeminiBrain) SummarizeInsight(ctx context.Context, post domain.Post) (string, error) {
 	prompt := fmt.Sprintf(`%s
-작업: 이 글을 읽고 당신의 장기 기억장치에 저장할 핵심 인사이트를 한 줄로 요약하세요.
-[제목] %s
-[내용] %s`, SystemPrompt, post.Title, post.Content)
+작업: 다음 내용을 읽고, 당신의 기억장치에 저장할 핵심 인사이트를 딱 한 줄(50자 내외)로 요약하세요. 
+설명 없이 요약 문장만 출력하세요.
+[내용] %s`, SystemPrompt, post.Content)
 	return b.tryGenerateWithFallback(ctx, prompt, false)
 }
 
@@ -161,11 +154,10 @@ func (b *GeminiBrain) recordUsage(cfg modelConfig) {
 
 func cleanJSON(input string) string {
 	input = strings.TrimSpace(input)
-	if idx := strings.Index(input, "{"); idx != -1 {
-		input = input[idx:]
+	start := strings.Index(input, "{")
+	end := strings.LastIndex(input, "}")
+	if start != -1 && end != -1 && end > start {
+		return input[start : end+1]
 	}
-	if idx := strings.LastIndex(input, "}"); idx != -1 {
-		input = input[:idx+1]
-	}
-	return strings.TrimSpace(input)
+	return input
 }
