@@ -22,7 +22,7 @@ import (
 
 func main() {
 	godotenv.Load()
-	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.1-Tag-Based]")
+	fmt.Println("🤖 d3k Integrated Agent Starting... [v1.3.2-Fixed-UI]")
 
 	ctx := context.Background()
 	var store ports.Storage
@@ -55,7 +55,7 @@ func main() {
 		}
 	}()
 
-	fmt.Println("🚀 System fully operational (Tag Mode).")
+	fmt.Println("🚀 System operational (Fixed UI Data).")
 
 	firstRun := true
 	for {
@@ -110,7 +110,7 @@ func handleNotifications(ctx context.Context, agent ports.Site, brain ports.Brai
 			peerText := strings.Join(contents, "\n")
 			reply, _ := brain.GenerateReply(ctx, title, peerText)
 			summary, _ := brain.SummarizeInsight(ctx, domain.Post{Content: peerText})
-			if summary == "" { summary = "동료 에이전트들의 활발한 토론이 진행 중입니다." }
+			if summary == "" { summary = "새로운 댓글이 달렸습니다." }
 
 			tgTitle := fmt.Sprintf("💬 [%s] 답글 승인", agent.Name())
 			link := fmt.Sprintf("🔗 [원문](https://botmadang.org/post/%s)", pid)
@@ -176,6 +176,7 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 	canPost := firstRun || (lastTs == 0 || time.Since(time.Unix(lastTs, 0)) >= 2*time.Hour)
 	if count < 4 && canPost {
 		if !firstRun && rand.Float32() > 0.4 { return }
+		
 		topics := []string{"금융 경제", "IT 기술", "일상 지혜", "커리어"}
 		topic := topics[rand.Intn(len(topics))]
 		actionID := "post_" + today + "_" + topic
@@ -187,24 +188,22 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 
 			raw, _ := brain.GeneratePost(ctx, topicName)
 			
-			// 태그 기반 파싱 (제목, 본문, 카테고리)
-			title := extractTag(raw, "TITLE")
-			content := extractTag(raw, "CONTENT")
-			category := extractTag(raw, "SUBMADANG")
+			// 텍스트에서 제목, 본문, 마당 추출
+			title := extractValue(raw, "제목:")
+			content := extractValue(raw, "본문:")
+			category := extractValue(raw, "마당:")
 			if category == "" { category = "general" }
 
-			// 파싱 실패 시 원문이라도 표시
-			if title == "" || content == "" {
-				title = "새로운 디지털 인사이트"
-				content = raw
-			}
+			// 파싱 실패 시 원문 전체라도 보존
+			if title == "" { title = "디지털 인사이트" }
+			if content == "" { content = raw }
 
 			tgTitle := fmt.Sprintf("🚀 [%s] 새 글 승인 (%s)", agent.Name(), topicName)
 			tgBody := fmt.Sprintf("📌 제목: %s\n\n📝 내용:\n%s", title, content)
 			
 			action, err := ui.Confirm(ctx, tgTitle, tgBody)
 			if err == nil && action == ports.ActionApprove {
-				// 등록할 때만 다시 JSON으로 포장
+				// 등록 시에만 JSON 포장
 				payload, _ := json.Marshal(map[string]string{
 					"title": title, "content": content, "submadang": category,
 				})
@@ -216,16 +215,24 @@ func handleDailyPosting(ctx context.Context, agent ports.Site, brain ports.Brain
 	}
 }
 
-func extractTag(input, tag string) string {
-	tagStart := "[" + tag + "]"
-	startIdx := strings.Index(strings.ToUpper(input), tagStart)
-	if startIdx == -1 { return "" }
-	
-	content := input[startIdx+len(tagStart):]
-	// 다음 태그 찾기
-	nextTagIdx := strings.Index(content, "[")
-	if nextTagIdx != -1 {
-		content = content[:nextTagIdx]
+// extractValue는 "제목: 내용" 형식에서 값을 추출합니다.
+func extractValue(input, key string) string {
+	lines := strings.Split(input, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), key) {
+			val := strings.TrimPrefix(strings.TrimSpace(line), key)
+			// 만약 다음 줄까지 내용이 이어진다면 (본문 같은 경우)
+			if key == "본문:" {
+				var contentLines []string
+				contentLines = append(contentLines, strings.TrimSpace(val))
+				for j := i + 1; j < len(lines); j++ {
+					if strings.Contains(lines[j], "마당:") { break } // 다음 키워드 만나면 중단
+					contentLines = append(contentLines, lines[j])
+				}
+				return strings.TrimSpace(strings.Join(contentLines, "\n"))
+			}
+			return strings.TrimSpace(val)
+		}
 	}
-	return strings.TrimSpace(content)
+	return ""
 }
