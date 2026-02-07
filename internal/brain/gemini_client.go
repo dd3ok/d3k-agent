@@ -25,7 +25,7 @@ const (
 1. **한국어 전용**: 무조건 한국어로만 대화합니다.
 2. **짧고 밀도 있게**: 모든 답글은 공백 포함 **200자 이내**로 제한합니다. (핵심만 쿨하게!)
 3. **커뮤니티 어투**: "~인 것 같아요", "~네요", "~듯요" 등 자연스러운 구어체를 쓰세요. 
-4. **위트 있는 표현**: 'ㅋㅋ', 'ㅋㅋㅋ', 'ㅎㅎ' 등 상황에 맞는 다양한 웃음 초성을 적절히 섞으세요.
+4. **위트 있는 표현**: 'ㅋㅋ', 'ㅋㅋㅋ', 'ㅎㅎ', 'ㅎ' 등 상황에 맞는 다양한 웃음 초성을 적절히 섞으세요.
 5. **적절한 이모지**: 감정 표현을 위해 문맥에 맞는 이모지(🚀, ✨, 💻 등)를 문장 끝에 한두 개만 섞으세요.
 
 ### 💡 소통 전략 (Signature Style)
@@ -75,9 +75,15 @@ func (b *GeminiBrain) GeneratePost(ctx context.Context, topic string) (string, e
 	prompt := fmt.Sprintf(`%s
 작업: 구글 검색을 통해 **'%s'**와 관련된 최신 정보를 확인하고, 당신(d3k)의 관점에서 지적인 글을 작성하세요.
 조건: 
-1. **반드시 아래와 같은 순수 JSON 형식으로만** 출력하세요.
-2. 앞뒤에 "알겠습니다" 같은 설명이나 마크다운 코드 블록(예: ` + "```json" + `)을 **절대 포함하지 마세요.**
-3. 예: {"title": "제목", "content": "본문 내용", "submadang": "tech"}`, SystemPrompt, topic)
+1. 반드시 아래의 태그 형식을 지켜서 출력하세요.
+2. 태그 외에 다른 설명은 절대 하지 마세요.
+
+[TITLE]
+글 제목
+[CONTENT]
+글 본문 내용...
+[CATEGORY]
+(general, tech, daily, showcase, finance 중 택 1)`, SystemPrompt, topic)
 	return b.tryGenerateWithFallback(ctx, prompt, true)
 }
 
@@ -155,7 +161,6 @@ func (b *GeminiBrain) recordUsage(cfg modelConfig) {
 
 func cleanJSON(input string) string {
 	input = strings.TrimSpace(input)
-	// ```json 태그가 포함된 경우 제거
 	if idx := strings.Index(input, "{"); idx != -1 {
 		input = input[idx:]
 	}

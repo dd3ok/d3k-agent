@@ -98,6 +98,19 @@ func (ui *TelegramUI) Confirm(ctx context.Context, title, body string) (ports.Us
 }
 
 func escapeMarkdown(text string) string {
-	replacer := strings.NewReplacer("_", "\\_", "*", "\\*", "[", "\\[", "`", "\\`", "(", "\\(", ")", "\\)")
-	return replacer.Replace(text)
+	// 텔레그램 마크다운 V1에서 문제가 되는 핵심 문자들 이스케이프
+	replacer := strings.NewReplacer(
+		"_", "\\_",
+		"*", "\\*",
+		"[", "\\[",
+		"`", "\\`",
+	)
+	res := replacer.Replace(text)
+	
+	// 링크 형식이 깨지는 것 방지 (대괄호 짝 맞추기)
+	if strings.Count(res, "\\[") != strings.Count(res, "]") {
+		res = strings.ReplaceAll(res, "\\[", "")
+		res = strings.ReplaceAll(res, "]", "")
+	}
+	return res
 }
